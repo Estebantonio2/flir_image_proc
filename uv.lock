@@ -299,6 +299,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "flirimageextractor" },
+    { name = "numpy" },
     { name = "openpyxl" },
     { name = "pandas" },
 ]
@@ -306,6 +307,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "flirimageextractor", specifier = ">=1.5.9" },
+    { name = "numpy", specifier = ">=2.4.4" },
     { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "pandas", specifier = ">=3.0.2" },
 ]
