@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 
-def find_environment_excel(test_dir: Path, extensions: tuple[str, ...]) -> Path | None:
+def find_environment_excels(test_dir: Path, extensions: tuple[str, ...]) -> list[Path]:
     excel_files: list[Path] = []
 
     for ext in extensions:
@@ -15,10 +15,7 @@ def find_environment_excel(test_dir: Path, extensions: tuple[str, ...]) -> Path 
         if not file.name.startswith("~$")
     ]
 
-    if not excel_files:
-        return None
-
-    return sorted(excel_files)[0]
+    return sorted(excel_files)
 
 
 def read_environment_excel(

@@ -4,9 +4,9 @@ import re
 
 
 _FILENAME_PATTERN = re.compile(
-    r"^(?P<snapshot>\d+)__"
-    r"(?P<date>\d{2}-\d{2}-\d{4})_"
-    r"(?P<hour>\d{2})-(?P<minute>\d{2})-(?P<second>\d{2})-(?P<millis>\d+)$"
+    r"^(?P<date>\d{2}-\d{2}-\d{4})_"
+    r"(?P<hour>\d{2})-(?P<minute>\d{2})-(?P<second>\d{2})-(?P<millis>\d+)__"
+    r"(?P<snapshot>\d+)$"
 )
 
 
@@ -44,4 +44,5 @@ def parse_capture_datetime(path: Path) -> datetime:
 
 
 def compute_elapsed_seconds(capture_dt: datetime, start_dt: datetime) -> float:
-    return float((capture_dt - start_dt).total_seconds())
+    # Se añade 1 segundo porque la primera captura (delta=0) se toma 1s después de soltar la superficie
+    return float((capture_dt - start_dt).total_seconds()) + 1.0
