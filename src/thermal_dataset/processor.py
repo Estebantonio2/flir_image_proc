@@ -1,6 +1,8 @@
 from pathlib import Path
 
+import cv2
 import pandas as pd
+from pandas.errors import EmptyDataError
 
 from .config import DatasetConfig
 from .environment import (
@@ -24,6 +26,7 @@ from .io_utils import (
     save_npy,
     copy_jpg,
 )
+from .roi import RoiBox, crop_square_resize_array, crop_square_resize_image, select_or_confirm_roi
 from .thermal_extractor import extract_thermal_array
 
 
@@ -34,14 +37,23 @@ def build_clean_dataset(config: DatasetConfig) -> tuple[pd.DataFrame, pd.DataFra
     metadata_path = config.output_root / config.metadata_filename
     warnings_path = config.output_root / config.warnings_filename
 
-    if metadata_path.exists():
+    if metadata_path.exists() and not config.overwrite_existing:
         print(f"Cargando metadata existente desde {metadata_path}...")
-        all_rows = pd.read_csv(metadata_path).to_dict("records")
+        all_rows = _read_csv_records_if_not_empty(metadata_path)
 
-    if warnings_path.exists():
-        all_warnings = pd.read_csv(warnings_path).to_dict("records")
+    if warnings_path.exists() and not config.overwrite_existing:
+        all_warnings = _read_csv_records_if_not_empty(warnings_path)
 
     person_dirs = list_test_dirs(config.raw_root)
+    if config.target_person_surface is not None:
+        person_dirs = [
+            person_dir for person_dir in person_dirs
+            if person_dir.name == config.target_person_surface
+        ]
+        if not person_dirs:
+            raise FileNotFoundError(
+                f"No existe la carpeta solicitada en raw_data: {config.target_person_surface}"
+            )
 
     for person_dir in person_dirs:
         person_name_raw = person_dir.name
@@ -51,24 +63,52 @@ def build_clean_dataset(config: DatasetConfig) -> tuple[pd.DataFrame, pd.DataFra
 
         person_surface_dirname = f"{person}_{surface}"
         output_dir = config.output_root / person_surface_dirname
+        is_target_person = config.target_person_surface == person_surface_dirname
         
-        if output_dir.exists():
+        if output_dir.exists() and not config.overwrite_existing and not is_target_person:
             print(f"La carpeta '{person_surface_dirname}' ya existe en processed_data. Omitiendo procesamiento...")
             continue
             
-        print(f"Procesando nueva carpeta: '{person_surface_dirname}'...")
+        print(f"Procesando carpeta: '{person_surface_dirname}'...")
         create_output_dirs(output_dir)
         
         test_dirs = list_test_dirs(person_dir)
+        if config.target_test_num is not None:
+            if config.target_test_num < 1 or config.target_test_num > len(test_dirs):
+                raise ValueError(
+                    f"La secuencia {config.target_test_num} no existe en {person_surface_dirname}. "
+                    f"Secuencias disponibles: 1-{len(test_dirs)}"
+                )
+            test_dirs = [test_dirs[config.target_test_num - 1]]
+
         for i, test_dir in enumerate(test_dirs, 1):
+            test_num = config.target_test_num if config.target_test_num is not None else i
             rows, warnings = process_sequence_folder(
-                test_dir, person_dir, person, surface, i, config
+                test_dir, person_dir, person, surface, test_num, config
             )
             all_rows.extend(rows)
             all_warnings.extend(warnings)
 
     # Eliminar posibles filas duplicadas antes de crear el CSV
-    metadata = pd.DataFrame(all_rows).drop_duplicates(subset=["name", "surface", "sample_id"]).reset_index(drop=True)
+    if config.target_person_surface is not None and config.target_test_num is not None:
+        parts = config.target_person_surface.split("_")
+        person = parts[0]
+        surface = parts[1] if len(parts) > 1 else "unknown"
+        target_sequence_id = f"{person[:3]}_{surface[:3]}_test{config.target_test_num}"
+        all_rows = [
+            row for row in all_rows
+            if row.get("sequence_id") != target_sequence_id
+            or row.get("_newly_processed") is True
+        ]
+        all_warnings = [
+            warning for warning in all_warnings
+            if warning.get("sequence_id") != target_sequence_id
+        ]
+
+    for row in all_rows:
+        row.pop("_newly_processed", None)
+
+    metadata = pd.DataFrame(all_rows).drop_duplicates(subset=["name", "surface", "sample_id"], keep="last").reset_index(drop=True)
     warnings_df = pd.DataFrame(all_warnings).drop_duplicates().reset_index(drop=True)
 
     if not metadata.empty:
@@ -117,6 +157,29 @@ def process_sequence_folder(
     start_datetime = parse_capture_datetime(image_paths[0])
     person_surface_dirname = f"{person}_{surface}"
     new_sequence_id = f"{person[:3]}_{surface[:3]}_test{test_num}"
+    roi = None
+
+    if config.use_roi:
+        try:
+            roi, _ = select_or_confirm_roi(
+                image_path=image_paths[0],
+                output_size=config.roi_output_size,
+                manual=config.manual_roi,
+                center_ratio=config.roi_detection_center_ratio,
+            )
+            print(
+                f"ROI {new_sequence_id}: "
+                f"x1={roi.x1}, y1={roi.y1}, x2={roi.x2}, y2={roi.y2}"
+            )
+        except Exception as exc:
+            warnings.append(
+                {
+                    "sequence_id": sequence_id,
+                    "file": str(image_paths[0]),
+                    "warning": f"No se pudo definir ROI: {exc}",
+                }
+            )
+            return rows, warnings
 
     for image_path in image_paths:
         try:
@@ -129,7 +192,9 @@ def process_sequence_folder(
                 start_datetime=start_datetime,
                 env_df=env_df,
                 config=config,
+                roi=roi,
             )
+            row["_newly_processed"] = True
             rows.append(row)
 
         except Exception as exc:
@@ -153,6 +218,7 @@ def process_single_image(
     start_datetime,
     env_df: pd.DataFrame | None,
     config: DatasetConfig,
+    roi: RoiBox | None = None,
 ) -> dict:
     snapshot_number = parse_snapshot_number(image_path)
     capture_datetime = parse_capture_datetime(image_path)
@@ -182,6 +248,36 @@ def process_single_image(
         thermal=thermal,
         ambient_temp_C=environment["ambient_temp_C"],
     )
+
+    if config.use_roi:
+        if roi is None:
+            raise ValueError("config.use_roi=True, pero no se recibió ROI.")
+
+        image = cv2.imread(str(image_path))
+        if image is None:
+            raise ValueError(f"No se pudo leer imagen para aplicar ROI: {image_path}")
+
+        source_image_shape = image.shape[:2]
+        thermal = crop_square_resize_array(
+            array=thermal,
+            roi=roi,
+            source_image_shape=source_image_shape,
+            output_size=config.roi_output_size,
+        )
+        delta_t = crop_square_resize_array(
+            array=delta_t,
+            roi=roi,
+            source_image_shape=source_image_shape,
+            output_size=config.roi_output_size,
+        )
+
+        if config.copy_raw_jpg:
+            image_roi = crop_square_resize_image(
+                image=image,
+                roi=roi,
+                output_size=config.roi_output_size,
+            )
+            cv2.imwrite(str(config.output_root / image_relpath), image_roi)
 
     features = compute_basic_thermal_features(
         thermal=thermal,
@@ -219,6 +315,16 @@ def process_single_image(
         "thermal_height": thermal.shape[0],
         "thermal_width": thermal.shape[1],
     }
+
+    if roi is not None:
+        row.update(
+            {
+                "roi_x1": roi.x1,
+                "roi_y1": roi.y1,
+                "roi_x2": roi.x2,
+                "roi_y2": roi.y2,
+            }
+        )
 
     row.update(features)
 
@@ -286,3 +392,10 @@ def _load_environment_if_available(
     combined_df = combined_df.drop_duplicates(subset=["env_datetime"]).sort_values("env_datetime").reset_index(drop=True)
     
     return combined_df
+
+
+def _read_csv_records_if_not_empty(path: Path) -> list[dict]:
+    try:
+        return pd.read_csv(path).to_dict("records")
+    except EmptyDataError:
+        return []

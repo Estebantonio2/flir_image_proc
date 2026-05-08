@@ -9,6 +9,14 @@ class DatasetConfig:
 
     copy_raw_jpg: bool = True
     use_interpolation: bool = True
+    overwrite_existing: bool = True
+
+    use_roi: bool = True
+    manual_roi: bool = True
+    roi_output_size: int = 224
+    roi_detection_center_ratio: float = 0.8
+    target_person_surface: str | None = None
+    target_test_num: int | None = None
 
     raw_jpg_dirname: str = "raw_jpg"
     thermal_dirname: str = "thermal_npy"
