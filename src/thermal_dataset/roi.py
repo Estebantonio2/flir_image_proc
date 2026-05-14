@@ -82,7 +82,6 @@ def suggest_roi_from_image(
 
 def select_or_confirm_roi(
     image_path: Path,
-    output_size: int = 224,
     manual: bool = True,
     padding_ratio: float = 0.1,
     thresh_percent: float = 0.6,
@@ -131,34 +130,25 @@ def select_or_confirm_roi(
             x, y, width, height = [int(value) for value in selected]
             final_roi = RoiBox(x1=x, y1=y, x2=x + width, y2=y + height)
 
-    roi_224 = crop_square_resize_image(image, final_roi, output_size=output_size)
-    return final_roi, roi_224
+    image_roi = crop_image_to_roi(image, final_roi)
+    return final_roi, image_roi
 
 
-def crop_square_resize_image(
+def crop_image_to_roi(
     image: np.ndarray,
     roi: RoiBox,
-    output_size: int = 224,
 ) -> np.ndarray:
     crop = image[roi.y1:roi.y2, roi.x1:roi.x2]
     if crop.size == 0:
         raise ValueError(f"La ROI no contiene pixeles: {roi}")
 
-    height, width = crop.shape[:2]
-    size = max(height, width)
-    square = np.zeros((size, size, image.shape[2]), dtype=image.dtype)
-    y_offset = (size - height) // 2
-    x_offset = (size - width) // 2
-    square[y_offset:y_offset + height, x_offset:x_offset + width] = crop
-
-    return cv2.resize(square, (output_size, output_size), interpolation=cv2.INTER_LINEAR)
+    return crop
 
 
-def crop_square_resize_array(
+def crop_array_to_roi(
     array: np.ndarray,
     roi: RoiBox,
     source_image_shape: tuple[int, int],
-    output_size: int = 224,
 ) -> np.ndarray:
     if array.ndim != 2:
         raise ValueError(f"Se esperaba una matriz térmica 2D. Shape: {array.shape}")
@@ -173,21 +163,7 @@ def crop_square_resize_array(
     if crop.size == 0:
         raise ValueError(f"La ROI escalada no contiene pixeles: {array_roi}")
 
-    height, width = crop.shape
-    size = max(height, width)
-    pad_top = (size - height) // 2
-    pad_bottom = size - height - pad_top
-    pad_left = (size - width) // 2
-    pad_right = size - width - pad_left
-
-    square = np.pad(
-        crop,
-        pad_width=((pad_top, pad_bottom), (pad_left, pad_right)),
-        mode="edge",
-    )
-
-    resized = cv2.resize(square, (output_size, output_size), interpolation=cv2.INTER_LINEAR)
-    return resized.astype(np.float32)
+    return crop.astype(np.float32)
 
 
 def scale_roi_to_array(

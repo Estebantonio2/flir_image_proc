@@ -13,7 +13,6 @@ class DatasetConfig:
 
     use_roi: bool = True
     manual_roi: bool = True
-    roi_output_size: int = 224
     roi_detection_center_ratio: float = 0.8
     target_person_surface: str | None = None
     target_test_num: int | None = None

@@ -6,7 +6,7 @@ from src.thermal_dataset import DatasetConfig, build_clean_dataset
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Procesa imágenes FLIR y deja thermal/deltaT en ROI 224x224.",
+        description="Procesa imágenes FLIR y deja thermal/deltaT recortados al ROI.",
     )
     parser.add_argument(
         "person_surface",
@@ -32,7 +32,6 @@ def main() -> None:
         overwrite_existing=False,
         use_roi=True,
         manual_roi=True,
-        roi_output_size=224,
         target_person_surface=args.person_surface,
         target_test_num=args.test_num,
     )
@@ -45,7 +44,7 @@ def main() -> None:
     print("Preprocesamiento terminado.")
     print(f"Muestras procesadas: {len(metadata)}")
     print(f"Advertencias: {len(warnings_df)}")
-    print("Salida térmica/deltaT: ROI 224x224")
+    print("Salida térmica/deltaT: ROI con tamaño original del recorte")
     print(f"Metadata: {config.output_root / config.metadata_filename}")
     print(f"Warnings: {config.output_root / config.warnings_filename}")
 

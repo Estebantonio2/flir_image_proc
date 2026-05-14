@@ -26,7 +26,7 @@ from .io_utils import (
     save_npy,
     copy_jpg,
 )
-from .roi import RoiBox, crop_square_resize_array, crop_square_resize_image, select_or_confirm_roi
+from .roi import RoiBox, crop_array_to_roi, crop_image_to_roi, select_or_confirm_roi
 from .thermal_extractor import extract_thermal_array
 
 
@@ -163,7 +163,6 @@ def process_sequence_folder(
         try:
             roi, _ = select_or_confirm_roi(
                 image_path=image_paths[0],
-                output_size=config.roi_output_size,
                 manual=config.manual_roi,
                 center_ratio=config.roi_detection_center_ratio,
             )
@@ -258,24 +257,21 @@ def process_single_image(
             raise ValueError(f"No se pudo leer imagen para aplicar ROI: {image_path}")
 
         source_image_shape = image.shape[:2]
-        thermal = crop_square_resize_array(
+        thermal = crop_array_to_roi(
             array=thermal,
             roi=roi,
             source_image_shape=source_image_shape,
-            output_size=config.roi_output_size,
         )
-        delta_t = crop_square_resize_array(
+        delta_t = crop_array_to_roi(
             array=delta_t,
             roi=roi,
             source_image_shape=source_image_shape,
-            output_size=config.roi_output_size,
         )
 
         if config.copy_raw_jpg:
-            image_roi = crop_square_resize_image(
+            image_roi = crop_image_to_roi(
                 image=image,
                 roi=roi,
-                output_size=config.roi_output_size,
             )
             cv2.imwrite(str(config.output_root / image_relpath), image_roi)
 
