@@ -9,6 +9,7 @@ class DatasetConfig:
 
     copy_raw_jpg: bool = True
     use_interpolation: bool = True
+    max_environment_time_diff_s: float = 60.0
     overwrite_existing: bool = True
 
     use_roi: bool = True

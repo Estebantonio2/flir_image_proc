@@ -195,6 +195,12 @@ def process_sequence_folder(
             )
             row["_newly_processed"] = True
             rows.append(row)
+            _append_environment_timing_warning_if_needed(
+                warnings=warnings,
+                row=row,
+                image_path=image_path,
+                config=config,
+            )
 
         except Exception as exc:
             warnings.append(
@@ -206,6 +212,34 @@ def process_sequence_folder(
             )
 
     return rows, warnings
+
+
+def _append_environment_timing_warning_if_needed(
+    warnings: list[dict],
+    row: dict,
+    image_path: Path,
+    config: DatasetConfig,
+) -> None:
+    env_time_diff_s = row.get("env_time_diff_s")
+
+    if pd.isna(env_time_diff_s):
+        return
+
+    env_time_diff_s = float(env_time_diff_s)
+    if env_time_diff_s < config.max_environment_time_diff_s:
+        return
+
+    warnings.append(
+        {
+            "sequence_id": row["sequence_id"],
+            "file": str(image_path),
+            "warning": (
+                "No se encontró una medición ambiental a menos de "
+                f"{config.max_environment_time_diff_s:g} segundos. "
+                f"Fila ambiental más cercana: {env_time_diff_s:.1f} segundos."
+            ),
+        }
+    )
 
 
 def process_single_image(
