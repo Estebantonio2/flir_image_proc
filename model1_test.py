@@ -260,42 +260,47 @@ def train_one_epoch(
 
 
 @torch.no_grad()
-def evaluate_mae_seconds(model: nn.Module, loader: DataLoader, device: torch.device) -> float:
-    model.eval()
-    total_abs_error = 0.0
-    total_samples = 0
-
-    for x, y in loader:
-        x = x.to(device)
-        y = y.to(device)
-        pred = model(x)
-        total_abs_error += torch.sum(torch.abs(pred - y)).item()
-        total_samples += x.size(0)
-
-    return total_abs_error / total_samples
-
-
-@torch.no_grad()
-def evaluate_time_error_rates(
+def evaluate_time_metrics(
     model: nn.Module,
     loader: DataLoader,
     device: torch.device,
     thresholds_s: tuple[float, ...] = (60.0, 120.0),
-) -> dict[float, float]:
+) -> dict[str, float]:
     model.eval()
-    errors = []
+    total_abs_error = 0.0
+    total_squared_error = 0.0
+    total_samples = 0
+    threshold_misses = {threshold: 0 for threshold in thresholds_s}
 
     for x, y in loader:
         x = x.to(device)
         y = y.to(device)
         pred = model(x)
-        errors.append(torch.abs(pred - y).cpu())
+        absolute_error = torch.abs(pred - y)
+        total_abs_error += torch.sum(absolute_error).item()
+        total_squared_error += torch.sum(torch.square(pred - y)).item()
+        total_samples += x.size(0)
 
-    absolute_errors = torch.cat(errors)
-    return {
-        threshold: float(torch.mean((absolute_errors > threshold).float()).item())
-        for threshold in thresholds_s
+        for threshold in thresholds_s:
+            threshold_misses[threshold] += torch.sum(absolute_error > threshold).item()
+
+    metrics = {
+        "mae_s": total_abs_error / total_samples,
+        "rmse_s": (total_squared_error / total_samples) ** 0.5,
     }
+    for threshold in thresholds_s:
+        metrics[f"error{int(threshold)}"] = threshold_misses[threshold] / total_samples
+
+    return metrics
+
+
+def format_metrics(prefix: str, metrics: dict[str, float]) -> str:
+    return (
+        f"{prefix}_mae={metrics['mae_s']:6.2f}s "
+        f"{prefix}_rmse={metrics['rmse_s']:6.2f}s "
+        f"{prefix}_err60={metrics['error60']:.3f} "
+        f"{prefix}_err120={metrics['error120']:.3f}"
+    )
 
 
 def split_indices_by_sequence(
@@ -368,20 +373,35 @@ def main() -> None:
     )
 
     train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True, num_workers=0)
+    train_eval_loader = DataLoader(train_dataset, batch_size=16, shuffle=False, num_workers=0)
     val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False, num_workers=0)
 
     model = ThermalDepartureTimeNet(input_channels=1).to(device)
     criterion = SqrtScaledMSELoss(time_scale=30.0)
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-4)
 
+    best_val_mae = float("inf")
+    best_epoch = 0
+
     for epoch in range(1, 21):
         train_loss = train_one_epoch(model, train_loader, optimizer, criterion, device)
-        val_mae = evaluate_mae_seconds(model, val_loader, device)
-        error_rates = evaluate_time_error_rates(model, val_loader, device)
+        train_metrics = evaluate_time_metrics(model, train_eval_loader, device)
+        val_metrics = evaluate_time_metrics(model, val_loader, device)
+        generalization_gap = val_metrics["mae_s"] - train_metrics["mae_s"]
+
+        is_best = val_metrics["mae_s"] < best_val_mae
+        if is_best:
+            best_val_mae = val_metrics["mae_s"]
+            best_epoch = epoch
+            torch.save(model.state_dict(), "model1_departure_time_best.pt")
+
         print(
             f"epoch={epoch:02d} train_loss={train_loss:.6f} "
-            f"val_mae_s={val_mae:.2f} "
-            f"error60={error_rates[60.0]:.3f} error120={error_rates[120.0]:.3f}"
+            f"{format_metrics('train', train_metrics)} "
+            f"{format_metrics('val', val_metrics)} "
+            f"gap_mae={generalization_gap:6.2f}s "
+            f"best_epoch={best_epoch:02d}"
+            f"{' *' if is_best else ''}"
         )
 
     torch.save(model.state_dict(), "model1_departure_time.pt")
