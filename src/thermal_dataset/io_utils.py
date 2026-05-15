@@ -18,10 +18,10 @@ def list_test_dirs(raw_root: Path) -> list[Path]:
 
 
 def list_images(test_dir: Path, extensions: tuple[str, ...]) -> list[Path]:
-    images: list[Path] = []
+    images: set[Path] = set()
 
     for ext in extensions:
-        images.extend(test_dir.glob(f"*{ext}"))
+        images.update(path.resolve() for path in test_dir.glob(f"*{ext}"))
 
     return sorted(images)
 

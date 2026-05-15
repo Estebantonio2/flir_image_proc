@@ -26,6 +26,7 @@ from .io_utils import (
     save_npy,
     copy_jpg,
 )
+from .naming import translate_token
 from .roi import RoiBox, crop_array_to_roi, crop_image_to_roi, select_or_confirm_roi
 from .thermal_extractor import extract_thermal_array
 
@@ -59,11 +60,12 @@ def build_clean_dataset(config: DatasetConfig) -> tuple[pd.DataFrame, pd.DataFra
         person_name_raw = person_dir.name
         parts = person_name_raw.split("_")
         person = parts[0]
-        surface = parts[1] if len(parts) > 1 else "unknown"
+        raw_surface = parts[1] if len(parts) > 1 else "unknown"
+        surface = translate_token(raw_surface)
 
         person_surface_dirname = f"{person}_{surface}"
         output_dir = config.output_root / person_surface_dirname
-        is_target_person = config.target_person_surface == person_surface_dirname
+        is_target_person = config.target_person_surface in {person_dir.name, person_surface_dirname}
         
         if output_dir.exists() and not config.overwrite_existing and not is_target_person:
             print(f"La carpeta '{person_surface_dirname}' ya existe en processed_data. Omitiendo procesamiento...")
@@ -93,7 +95,7 @@ def build_clean_dataset(config: DatasetConfig) -> tuple[pd.DataFrame, pd.DataFra
     if config.target_person_surface is not None and config.target_test_num is not None:
         parts = config.target_person_surface.split("_")
         person = parts[0]
-        surface = parts[1] if len(parts) > 1 else "unknown"
+        surface = translate_token(parts[1]) if len(parts) > 1 else "unknown"
         target_sequence_id = f"{person[:3]}_{surface[:3]}_test{config.target_test_num}"
         all_rows = [
             row for row in all_rows
@@ -161,13 +163,15 @@ def process_sequence_folder(
 
     if config.use_roi:
         try:
+            roi_image_path = _select_roi_reference_image(image_paths, sequence_dir)
             roi, _ = select_or_confirm_roi(
-                image_path=image_paths[0],
+                image_path=roi_image_path,
                 manual=config.manual_roi,
                 center_ratio=config.roi_detection_center_ratio,
             )
             print(
                 f"ROI {new_sequence_id}: "
+                f"ref={roi_image_path.name}, "
                 f"x1={roi.x1}, y1={roi.y1}, x2={roi.x2}, y2={roi.y2}"
             )
         except Exception as exc:
@@ -212,6 +216,23 @@ def process_sequence_folder(
             )
 
     return rows, warnings
+
+
+def _select_roi_reference_image(
+    image_paths: list[Path],
+    sequence_dir: Path,
+) -> Path:
+    if not sequence_dir.name.startswith("test_pre_mano"):
+        return image_paths[0]
+
+    for image_path in image_paths:
+        if parse_snapshot_number(image_path) == 27:
+            return image_path
+
+    if len(image_paths) >= 27:
+        return image_paths[26]
+
+    return image_paths[-1]
 
 
 def _append_environment_timing_warning_if_needed(
@@ -326,7 +347,7 @@ def process_single_image(
         "snapshot_number": snapshot_number,
         "name": person,
         "surface": surface,
-        "hand": "derecha",
+        "hand": "right",
 
         "source_image_path": str(image_path),
         "image_path": image_relpath.as_posix() if config.copy_raw_jpg else str(image_path),
