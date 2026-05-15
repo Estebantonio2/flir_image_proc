@@ -6,7 +6,18 @@ import numpy as np
 import pandas as pd
 import torch
 from torch import nn
-from torch.utils.data import DataLoader, Dataset, random_split
+from torch.utils.data import DataLoader, Dataset, Subset
+
+
+class DeltaTStandardizer:
+    def __init__(self, mean: float, std: float) -> None:
+        self.mean = mean
+        self.std = std
+
+    def __call__(self, trace: np.ndarray) -> np.ndarray:
+        if self.std < 1e-6:
+            return trace - self.mean
+        return (trace - self.mean) / self.std
 
 
 class ThermalTraceDataset(Dataset):
@@ -16,24 +27,27 @@ class ThermalTraceDataset(Dataset):
         processed_root: str | Path = "processed_data",
         target_column: str = "label_time_s",
         image_size: tuple[int, int] | None = (224, 224),
+        normalizer: DeltaTStandardizer | None = None,
     ) -> None:
         self.metadata_csv = Path(metadata_csv)
         self.processed_root = Path(processed_root)
         self.target_column = target_column
         self.image_size = image_size
+        self.normalizer = normalizer
 
         self.df = pd.read_csv(self.metadata_csv)
-        self.df = self.df.dropna(subset=["deltaT_path", target_column]).reset_index(drop=True)
+        self.df = self.df.dropna(subset=["deltaT_path", "sequence_id", target_column]).reset_index(drop=True)
 
     def __len__(self) -> int:
         return len(self.df)
 
     def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
         row = self.df.iloc[index]
-        delta_t_path = self.processed_root / row["deltaT_path"]
+        delta_t_path = self._resolve_processed_path(row["deltaT_path"])
 
         delta_t = np.load(delta_t_path).astype(np.float32)
-        delta_t = self._normalize_trace(delta_t)
+        if self.normalizer is not None:
+            delta_t = self.normalizer(delta_t)
 
         x = torch.from_numpy(delta_t).unsqueeze(0)
         if self.image_size is not None:
@@ -47,13 +61,11 @@ class ThermalTraceDataset(Dataset):
         y = torch.tensor(float(row[self.target_column]), dtype=torch.float32)
         return x, y
 
-    @staticmethod
-    def _normalize_trace(trace: np.ndarray) -> np.ndarray:
-        mean = float(np.mean(trace))
-        std = float(np.std(trace))
-        if std < 1e-6:
-            return trace - mean
-        return (trace - mean) / std
+    def _resolve_processed_path(self, relative_path: str | Path) -> Path:
+        path = Path(str(relative_path).replace("\\", "/"))
+        if path.is_absolute():
+            return path
+        return self.processed_root / path
 
 
 class SoftThresholdPReLU(nn.Module):
@@ -263,6 +275,72 @@ def evaluate_mae_seconds(model: nn.Module, loader: DataLoader, device: torch.dev
     return total_abs_error / total_samples
 
 
+@torch.no_grad()
+def evaluate_time_error_rates(
+    model: nn.Module,
+    loader: DataLoader,
+    device: torch.device,
+    thresholds_s: tuple[float, ...] = (60.0, 120.0),
+) -> dict[float, float]:
+    model.eval()
+    errors = []
+
+    for x, y in loader:
+        x = x.to(device)
+        y = y.to(device)
+        pred = model(x)
+        errors.append(torch.abs(pred - y).cpu())
+
+    absolute_errors = torch.cat(errors)
+    return {
+        threshold: float(torch.mean((absolute_errors > threshold).float()).item())
+        for threshold in thresholds_s
+    }
+
+
+def split_indices_by_sequence(
+    df: pd.DataFrame,
+    train_fraction: float = 0.8,
+    seed: int = 42,
+) -> tuple[list[int], list[int]]:
+    sequences = df["sequence_id"].drop_duplicates().to_numpy()
+    rng = np.random.default_rng(seed)
+    rng.shuffle(sequences)
+
+    train_sequence_count = max(1, int(round(len(sequences) * train_fraction)))
+    train_sequence_count = min(train_sequence_count, len(sequences) - 1)
+    train_sequences = set(sequences[:train_sequence_count])
+
+    train_indices = df.index[df["sequence_id"].isin(train_sequences)].tolist()
+    val_indices = df.index[~df["sequence_id"].isin(train_sequences)].tolist()
+    return train_indices, val_indices
+
+
+def fit_delta_t_standardizer(
+    dataset: ThermalTraceDataset,
+    indices: list[int],
+) -> DeltaTStandardizer:
+    total = 0.0
+    total_sq = 0.0
+    count = 0
+
+    for index in indices:
+        row = dataset.df.iloc[index]
+        delta_t = np.load(dataset._resolve_processed_path(row["deltaT_path"])).astype(np.float32)
+        valid = delta_t[np.isfinite(delta_t)]
+        total += float(np.sum(valid, dtype=np.float64))
+        total_sq += float(np.sum(np.square(valid, dtype=np.float64), dtype=np.float64))
+        count += int(valid.size)
+
+    if count == 0:
+        raise ValueError("No hay pixeles validos para calcular la normalizacion de deltaT.")
+
+    mean = total / count
+    variance = max(total_sq / count - mean**2, 0.0)
+    std = variance**0.5
+    return DeltaTStandardizer(mean=mean, std=std)
+
+
 def main() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dataset = ThermalTraceDataset(
@@ -272,12 +350,21 @@ def main() -> None:
         image_size=(224, 224),
     )
 
-    train_size = int(len(dataset) * 0.8)
-    val_size = len(dataset) - train_size
-    train_dataset, val_dataset = random_split(
-        dataset,
-        [train_size, val_size],
-        generator=torch.Generator().manual_seed(42),
+    train_indices, val_indices = split_indices_by_sequence(dataset.df, train_fraction=0.8, seed=42)
+    dataset.normalizer = fit_delta_t_standardizer(dataset, train_indices)
+    train_dataset = Subset(dataset, train_indices)
+    val_dataset = Subset(dataset, val_indices)
+
+    train_sequences = dataset.df.iloc[train_indices]["sequence_id"].nunique()
+    val_sequences = dataset.df.iloc[val_indices]["sequence_id"].nunique()
+    print(
+        "split="
+        f"{len(train_dataset)} train samples/{train_sequences} sequences, "
+        f"{len(val_dataset)} val samples/{val_sequences} sequences"
+    )
+    print(
+        "deltaT_normalizer="
+        f"mean={dataset.normalizer.mean:.4f}, std={dataset.normalizer.std:.4f}"
     )
 
     train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True, num_workers=0)
@@ -290,7 +377,12 @@ def main() -> None:
     for epoch in range(1, 21):
         train_loss = train_one_epoch(model, train_loader, optimizer, criterion, device)
         val_mae = evaluate_mae_seconds(model, val_loader, device)
-        print(f"epoch={epoch:02d} train_loss={train_loss:.6f} val_mae_s={val_mae:.2f}")
+        error_rates = evaluate_time_error_rates(model, val_loader, device)
+        print(
+            f"epoch={epoch:02d} train_loss={train_loss:.6f} "
+            f"val_mae_s={val_mae:.2f} "
+            f"error60={error_rates[60.0]:.3f} error120={error_rates[120.0]:.3f}"
+        )
 
     torch.save(model.state_dict(), "model1_departure_time.pt")
 

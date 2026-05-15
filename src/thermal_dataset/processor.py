@@ -329,9 +329,9 @@ def process_single_image(
         "hand": "derecha",
 
         "source_image_path": str(image_path),
-        "image_path": str(image_relpath) if config.copy_raw_jpg else str(image_path),
-        "thermal_path": str(thermal_relpath),
-        "deltaT_path": str(delta_t_relpath),
+        "image_path": image_relpath.as_posix() if config.copy_raw_jpg else str(image_path),
+        "thermal_path": thermal_relpath.as_posix(),
+        "deltaT_path": delta_t_relpath.as_posix(),
 
         "capture_datetime": capture_datetime.isoformat(sep=" "),
         "t_seconds": elapsed_seconds,
