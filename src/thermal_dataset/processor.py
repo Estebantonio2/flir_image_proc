@@ -31,6 +31,16 @@ from .roi import RoiBox, crop_array_to_roi, crop_image_to_roi, select_or_confirm
 from .thermal_extractor import extract_thermal_array
 
 
+PRE_HAND_SEQUENCE_PREFIX = "test_pre_mano"
+PRE_HAND_BASELINE_TIMES_S = list(range(-130, -9, 5))
+TEN_MINUTE_CAPTURE_TIMES_S = (
+    list(range(0, 61, 5))
+    + list(range(70, 301, 10))
+    + list(range(330, 601, 30))
+)
+PRE_HAND_CAPTURE_TIMES_S = PRE_HAND_BASELINE_TIMES_S + TEN_MINUTE_CAPTURE_TIMES_S
+
+
 def build_clean_dataset(config: DatasetConfig) -> tuple[pd.DataFrame, pd.DataFrame]:
     all_rows: list[dict] = []
     all_warnings: list[dict] = []
@@ -184,7 +194,9 @@ def process_sequence_folder(
             )
             return rows, warnings
 
-    for image_path in image_paths:
+    scheduled_times = _get_scheduled_times_for_sequence(sequence_dir, len(image_paths))
+
+    for image_index, image_path in enumerate(image_paths):
         try:
             row = process_single_image(
                 image_path=image_path,
@@ -196,6 +208,11 @@ def process_sequence_folder(
                 env_df=env_df,
                 config=config,
                 roi=roi,
+                scheduled_elapsed_seconds=(
+                    scheduled_times[image_index]
+                    if scheduled_times is not None
+                    else None
+                ),
             )
             row["_newly_processed"] = True
             rows.append(row)
@@ -222,7 +239,7 @@ def _select_roi_reference_image(
     image_paths: list[Path],
     sequence_dir: Path,
 ) -> Path:
-    if not sequence_dir.name.startswith("test_pre_mano"):
+    if not sequence_dir.name.startswith(PRE_HAND_SEQUENCE_PREFIX):
         return image_paths[0]
 
     for image_path in image_paths:
@@ -233,6 +250,23 @@ def _select_roi_reference_image(
         return image_paths[26]
 
     return image_paths[-1]
+
+
+def _get_scheduled_times_for_sequence(
+    sequence_dir: Path,
+    image_count: int,
+) -> list[float] | None:
+    if not sequence_dir.name.startswith(PRE_HAND_SEQUENCE_PREFIX):
+        return None
+
+    if image_count > len(PRE_HAND_CAPTURE_TIMES_S):
+        raise ValueError(
+            f"La secuencia {sequence_dir.name} tiene {image_count} imagenes, "
+            f"pero el cronograma pre-mano esperado tiene "
+            f"{len(PRE_HAND_CAPTURE_TIMES_S)} capturas."
+        )
+
+    return [float(time_s) for time_s in PRE_HAND_CAPTURE_TIMES_S[:image_count]]
 
 
 def _append_environment_timing_warning_if_needed(
@@ -273,10 +307,15 @@ def process_single_image(
     env_df: pd.DataFrame | None,
     config: DatasetConfig,
     roi: RoiBox | None = None,
+    scheduled_elapsed_seconds: float | None = None,
 ) -> dict:
     snapshot_number = parse_snapshot_number(image_path)
     capture_datetime = parse_capture_datetime(image_path)
-    elapsed_seconds = compute_elapsed_seconds(capture_datetime, start_datetime)
+    elapsed_seconds = (
+        float(scheduled_elapsed_seconds)
+        if scheduled_elapsed_seconds is not None
+        else compute_elapsed_seconds(capture_datetime, start_datetime)
+    )
 
     environment = get_environment_at_time(
         env_df=env_df,
