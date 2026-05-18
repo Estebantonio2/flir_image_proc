@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
 import numpy as np
@@ -7,6 +8,18 @@ import pandas as pd
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset, Subset
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Entrena un modelo CNN para estimar tiempo de huella termica.")
+    parser.add_argument("--epochs", type=int, default=120)
+    parser.add_argument("--patience", type=int, default=15)
+    parser.add_argument("--min-delta", type=float, default=1.0)
+    parser.add_argument("--batch-size", type=int, default=16)
+    parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument("--weight-decay", type=float, default=1e-4)
+    parser.add_argument("--min-time-s", type=float, default=0.0)
+    return parser.parse_args()
 
 
 class DeltaTStandardizer:
@@ -26,17 +39,20 @@ class ThermalTraceDataset(Dataset):
         metadata_csv: str | Path = "processed_data/metadata.csv",
         processed_root: str | Path = "processed_data",
         target_column: str = "label_time_s",
+        min_time_s: float = 0.0,
         image_size: tuple[int, int] | None = (224, 224),
         normalizer: DeltaTStandardizer | None = None,
     ) -> None:
         self.metadata_csv = Path(metadata_csv)
         self.processed_root = Path(processed_root)
         self.target_column = target_column
+        self.min_time_s = min_time_s
         self.image_size = image_size
         self.normalizer = normalizer
 
         self.df = pd.read_csv(self.metadata_csv)
         self.df = self.df.dropna(subset=["deltaT_path", "sequence_id", target_column]).reset_index(drop=True)
+        self.df = self.df[self.df[target_column].astype(float) > min_time_s].reset_index(drop=True)
 
     def __len__(self) -> int:
         return len(self.df)
@@ -347,11 +363,13 @@ def fit_delta_t_standardizer(
 
 
 def main() -> None:
+    args = parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dataset = ThermalTraceDataset(
         metadata_csv="processed_data/metadata.csv",
         processed_root="processed_data",
         target_column="label_time_s",
+        min_time_s=args.min_time_s,
         image_size=(224, 224),
     )
 
@@ -368,41 +386,66 @@ def main() -> None:
         f"{len(val_dataset)} val samples/{val_sequences} sequences"
     )
     print(
+        "target_filter="
+        f"{dataset.target_column} > {dataset.min_time_s:g}s, "
+        f"target_range=[{dataset.df[dataset.target_column].min():.2f}, "
+        f"{dataset.df[dataset.target_column].max():.2f}]s"
+    )
+    print(
         "deltaT_normalizer="
         f"mean={dataset.normalizer.mean:.4f}, std={dataset.normalizer.std:.4f}"
     )
 
-    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True, num_workers=0)
-    train_eval_loader = DataLoader(train_dataset, batch_size=16, shuffle=False, num_workers=0)
-    val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False, num_workers=0)
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
+    train_eval_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
+    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
 
     model = ThermalDepartureTimeNet(input_channels=1).to(device)
     criterion = SqrtScaledMSELoss(time_scale=30.0)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-4)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
     best_val_mae = float("inf")
     best_epoch = 0
+    epochs_without_improvement = 0
 
-    for epoch in range(1, 21):
+    print(
+        "training="
+        f"epochs={args.epochs}, patience={args.patience}, min_delta={args.min_delta:g}s, "
+        f"batch_size={args.batch_size}, lr={args.lr:g}, weight_decay={args.weight_decay:g}"
+    )
+
+    for epoch in range(1, args.epochs + 1):
         train_loss = train_one_epoch(model, train_loader, optimizer, criterion, device)
         train_metrics = evaluate_time_metrics(model, train_eval_loader, device)
         val_metrics = evaluate_time_metrics(model, val_loader, device)
         generalization_gap = val_metrics["mae_s"] - train_metrics["mae_s"]
 
-        is_best = val_metrics["mae_s"] < best_val_mae
+        is_best = val_metrics["mae_s"] < best_val_mae - args.min_delta
         if is_best:
             best_val_mae = val_metrics["mae_s"]
             best_epoch = epoch
+            epochs_without_improvement = 0
             torch.save(model.state_dict(), "model1_departure_time_best.pt")
+        else:
+            epochs_without_improvement += 1
 
         print(
             f"epoch={epoch:02d} train_loss={train_loss:.6f} "
             f"{format_metrics('train', train_metrics)} "
             f"{format_metrics('val', val_metrics)} "
             f"gap_mae={generalization_gap:6.2f}s "
-            f"best_epoch={best_epoch:02d}"
+            f"best_epoch={best_epoch:02d} "
+            f"no_improve={epochs_without_improvement:02d}/{args.patience}"
             f"{' *' if is_best else ''}"
         )
+
+        if epochs_without_improvement >= args.patience:
+            print(
+                "early_stopping="
+                f"stopped_at_epoch={epoch}, best_epoch={best_epoch}, "
+                f"best_val_mae={best_val_mae:.2f}s"
+            )
+            break
 
     torch.save(model.state_dict(), "model1_departure_time.pt")
 
