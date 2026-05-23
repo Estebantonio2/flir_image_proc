@@ -34,9 +34,9 @@ from .thermal_extractor import extract_thermal_array
 PRE_HAND_SEQUENCE_PREFIX = "test_pre_mano"
 PRE_HAND_BASELINE_TIMES_S = list(range(-130, -9, 5))
 TEN_MINUTE_CAPTURE_TIMES_S = (
-    list(range(0, 61, 5))
-    + list(range(70, 301, 10))
-    + list(range(330, 601, 30))
+    list(range(1, 62, 5))
+    + list(range(71, 302, 10))
+    + list(range(331, 602, 30))
 )
 PRE_HAND_CAPTURE_TIMES_S = PRE_HAND_BASELINE_TIMES_S + TEN_MINUTE_CAPTURE_TIMES_S
 
@@ -102,26 +102,25 @@ def build_clean_dataset(config: DatasetConfig) -> tuple[pd.DataFrame, pd.DataFra
             all_warnings.extend(warnings)
 
     # Eliminar posibles filas duplicadas antes de crear el CSV
-    if config.target_person_surface is not None and config.target_test_num is not None:
-        parts = config.target_person_surface.split("_")
-        person = parts[0]
-        surface = translate_token(parts[1]) if len(parts) > 1 else "unknown"
-        target_sequence_id = f"{person[:3]}_{surface[:3]}_test{config.target_test_num}"
-        all_rows = [
-            row for row in all_rows
-            if row.get("sequence_id") != target_sequence_id
-            or row.get("_newly_processed") is True
-        ]
-        all_warnings = [
-            warning for warning in all_warnings
-            if warning.get("sequence_id") != target_sequence_id
-        ]
-
+    processed_seq_ids = {row.get("sequence_id") for row in all_rows if row.get("_newly_processed")}
+    
+    clean_rows = []
     for row in all_rows:
+        seq_id = row.get("sequence_id")
+        if seq_id in processed_seq_ids and not row.get("_newly_processed"):
+            continue
         row.pop("_newly_processed", None)
+        clean_rows.append(row)
+        
+    all_rows = clean_rows
 
-    metadata = pd.DataFrame(all_rows).drop_duplicates(subset=["name", "surface", "sample_id"], keep="last").reset_index(drop=True)
-    warnings_df = pd.DataFrame(all_warnings).drop_duplicates().reset_index(drop=True)
+    metadata = pd.DataFrame(all_rows)
+    if not metadata.empty:
+        metadata = metadata.drop_duplicates(subset=["sequence_id", "snapshot_number"], keep="last").reset_index(drop=True)
+        
+    warnings_df = pd.DataFrame(all_warnings)
+    if not warnings_df.empty:
+        warnings_df = warnings_df.drop_duplicates().reset_index(drop=True)
 
     if not metadata.empty:
         metadata = metadata.sort_values(
@@ -194,10 +193,22 @@ def process_sequence_folder(
             )
             return rows, warnings
 
-    scheduled_times = _get_scheduled_times_for_sequence(sequence_dir, len(image_paths))
+    is_pre_hand = sequence_dir.name.startswith(PRE_HAND_SEQUENCE_PREFIX)
 
-    for image_index, image_path in enumerate(image_paths):
+    for image_path in image_paths:
         try:
+            snapshot_number = parse_snapshot_number(image_path)
+            
+            # Determinar tiempo programado basado en el número de snapshot, no en el índice de archivo
+            scheduled_elapsed_seconds = None
+            if is_pre_hand:
+                idx = snapshot_number - 1
+                if 0 <= idx < len(PRE_HAND_CAPTURE_TIMES_S):
+                    scheduled_elapsed_seconds = float(PRE_HAND_CAPTURE_TIMES_S[idx])
+                else:
+                    # Si el snapshot excede el cronograma, process_single_image usará compute_elapsed_seconds
+                    pass
+
             row = process_single_image(
                 image_path=image_path,
                 sequence_id=new_sequence_id,
@@ -208,11 +219,7 @@ def process_sequence_folder(
                 env_df=env_df,
                 config=config,
                 roi=roi,
-                scheduled_elapsed_seconds=(
-                    scheduled_times[image_index]
-                    if scheduled_times is not None
-                    else None
-                ),
+                scheduled_elapsed_seconds=scheduled_elapsed_seconds,
             )
             row["_newly_processed"] = True
             rows.append(row)
@@ -250,23 +257,6 @@ def _select_roi_reference_image(
         return image_paths[26]
 
     return image_paths[-1]
-
-
-def _get_scheduled_times_for_sequence(
-    sequence_dir: Path,
-    image_count: int,
-) -> list[float] | None:
-    if not sequence_dir.name.startswith(PRE_HAND_SEQUENCE_PREFIX):
-        return None
-
-    if image_count > len(PRE_HAND_CAPTURE_TIMES_S):
-        raise ValueError(
-            f"La secuencia {sequence_dir.name} tiene {image_count} imagenes, "
-            f"pero el cronograma pre-mano esperado tiene "
-            f"{len(PRE_HAND_CAPTURE_TIMES_S)} capturas."
-        )
-
-    return [float(time_s) for time_s in PRE_HAND_CAPTURE_TIMES_S[:image_count]]
 
 
 def _append_environment_timing_warning_if_needed(

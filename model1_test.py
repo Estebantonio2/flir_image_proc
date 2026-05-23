@@ -19,6 +19,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--min-time-s", type=float, default=0.0)
+    parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Dispositivo (cuda, cpu, mps)")
+    parser.add_argument("--num-workers", type=int, default=0, help="Numero de workers para DataLoader")
     return parser.parse_args()
 
 
@@ -53,6 +55,17 @@ class ThermalTraceDataset(Dataset):
         self.df = pd.read_csv(self.metadata_csv)
         self.df = self.df.dropna(subset=["deltaT_path", "sequence_id", target_column]).reset_index(drop=True)
         self.df = self.df[self.df[target_column].astype(float) > min_time_s].reset_index(drop=True)
+
+        # Verificar existencia de archivos y filtrar los que falten
+        valid_indices = []
+        for i, row in self.df.iterrows():
+            if self._resolve_processed_path(row["deltaT_path"]).exists():
+                valid_indices.append(i)
+        
+        if len(valid_indices) < len(self.df):
+            missing = len(self.df) - len(valid_indices)
+            print(f"Dataset: Omitiendo {missing} muestras cuyos archivos .npy no existen.")
+            self.df = self.df.iloc[valid_indices].reset_index(drop=True)
 
     def __len__(self) -> int:
         return len(self.df)
@@ -298,7 +311,7 @@ def evaluate_time_metrics(
         total_samples += x.size(0)
 
         for threshold in thresholds_s:
-            threshold_misses[threshold] += torch.sum(absolute_error > threshold).item()
+            threshold_misses[threshold] += int(torch.sum(absolute_error > threshold).item())
 
     metrics = {
         "mae_s": total_abs_error / total_samples,
@@ -364,7 +377,7 @@ def fit_delta_t_standardizer(
 
 def main() -> None:
     args = parse_args()
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device(args.device)
     dataset = ThermalTraceDataset(
         metadata_csv="processed_data/metadata.csv",
         processed_root="processed_data",
@@ -381,9 +394,9 @@ def main() -> None:
     train_sequences = dataset.df.iloc[train_indices]["sequence_id"].nunique()
     val_sequences = dataset.df.iloc[val_indices]["sequence_id"].nunique()
     print(
-        "split="
-        f"{len(train_dataset)} train samples/{train_sequences} sequences, "
-        f"{len(val_dataset)} val samples/{val_sequences} sequences"
+        f"device={device} "
+        f"split={len(train_dataset)} samples/{train_sequences} sequences (train), "
+        f"{len(val_dataset)} samples/{val_sequences} sequences (val)"
     )
     print(
         "target_filter="
@@ -396,9 +409,15 @@ def main() -> None:
         f"mean={dataset.normalizer.mean:.4f}, std={dataset.normalizer.std:.4f}"
     )
 
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
-    train_eval_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
-    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
+    loader_kwargs = {
+        "batch_size": args.batch_size,
+        "num_workers": args.num_workers,
+        "pin_memory": device.type == "cuda",
+    }
+
+    train_loader = DataLoader(train_dataset, shuffle=True, **loader_kwargs)
+    train_eval_loader = DataLoader(train_dataset, shuffle=False, **loader_kwargs)
+    val_loader = DataLoader(val_dataset, shuffle=False, **loader_kwargs)
 
     model = ThermalDepartureTimeNet(input_channels=1).to(device)
     criterion = SqrtScaledMSELoss(time_scale=30.0)
