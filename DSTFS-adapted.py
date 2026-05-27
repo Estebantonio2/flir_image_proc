@@ -4,9 +4,14 @@ Implementación de alta fidelidad de la rama temporal de DSTFS (Deep Soft Thresh
 adaptada para tarea única de estimación temporal, corrigiendo la resolución espacial,
 el umbral suave dinámico y el optimizador original según el estudio.
 """
+
+# ==============================================================================
+# 1. IMPORTACIONES
+# ==============================================================================
 from __future__ import annotations
 from typing import cast
 from pathlib import Path
+import random
 import numpy as np
 import pandas as pd
 import torch
@@ -14,7 +19,23 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset, Subset
 from torchvision import transforms
 
-# --- CONFIGURACIÓN PRINCIPAL ---
+# ==============================================================================
+# 2. SEMILLA GLOBAL Y REPRODUCIBILIDAD
+# ==============================================================================
+def set_seed(seed: int = 42):
+    """Establece la semilla para garantizar reproducibilidad en todas las corridas."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+# ==============================================================================
+# 3. CONFIGURACIÓN GENERAL (HIPERPARÁMETROS)
+# ==============================================================================
 CONFIG = {
     "epochs": 120,
     "patience": 15,
@@ -28,9 +49,11 @@ CONFIG = {
     "time_scale": 30.0,    # DSTFS: Factor de preprocesamiento de escala para etiquetas de tiempo
 }
 
-# --- DATASET Y AUGMENTATION ---
+# ==============================================================================
+# 4. PREPROCESAMIENTO Y DATASET
+# ==============================================================================
 def _build_train_transform() -> transforms.Compose:
-    # DSTFS: Replicación de aumento de datos térmicos multiescala y rotaciones
+    """Aumento de datos térmicos multiescala y rotaciones según el estudio original."""
     return transforms.Compose([
         transforms.ToPILImage(), 
         transforms.Resize((224, 224)),
@@ -43,6 +66,7 @@ def _build_train_transform() -> transforms.Compose:
     ])
 
 def _build_val_transform() -> transforms.Compose:
+    """Transformaciones estándar de validación sin distorsión geométrica."""
     return transforms.Compose([
         transforms.ToPILImage(), 
         transforms.Resize((112, 112)), 
@@ -77,16 +101,16 @@ class ThermalTraceDataset(Dataset):
         if xmax - xmin > 1e-6: x = (x - xmin) / (xmax - xmin) * 2.0 - 1.0
         else: x = torch.zeros_like(x)
 
-        # DSTFS: Escalar las etiquetas de tiempo (dividir por 30) para evitar fallas de convergencia por gradientes explosivos
-        t_scaled = float(row["label_time_s"]) / CONFIG["time_scale"]
-        return x, torch.tensor(t_scaled, dtype=torch.float32)
+        # Retorna el rastro y el tiempo real en segundos
+        return x, torch.tensor(float(row["label_time_s"]), dtype=torch.float32)
 
     def _resolve(self, p: str) -> Path:
         path = Path(str(p).replace("\\", "/"))
         return path if path.is_absolute() else self.root / path
 
-# --- COMPONENTES DEL MODELO (DSTFS) ---
-
+# ==============================================================================
+# 5. MÓDULOS DE ATENCIÓN Y ACTIVACIONES DE UMBRAL SUAVE
+# ==============================================================================
 class SoftThresholdPReLU(nn.Module):
     """
     DSTFS: Umbral Suave PReLU (SPRelu) dinámico y adaptativo.
@@ -117,32 +141,23 @@ class SoftThresholdPReLU(nn.Module):
         # 5. Activación Soft-thresholding: sign(x_act) * max(0, |x_act| - t)
         return torch.sign(x_act) * torch.relu(abs_x - t)
 
-class SPPChannelAttention(nn.Module):
+class ChannelAttention(nn.Module):
     """
-    DSTFS: Channel Attention (CA) con Spatial Pyramid Pooling (SPP) multiescala.
-    Utiliza pooling promedio y máximo en paralelo en sub-regiones para capturar difusión térmica amplia.
+    DSTFS: Channel Attention (CA) con pooling promedio y máximo globales
+    para resaltar los canales de disipación de calor relevantes.
     """
-    def __init__(self, channels: int, pool_scales=(1, 2, 4)):
+    def __init__(self, channels: int):
         super().__init__()
-        self.scales = pool_scales
         hidden = max(channels // 16, 4)
-        self.fc1 = nn.Conv2d(channels, hidden, 1, bias=False)
-        self.relu = nn.ReLU(inplace=True)
-        self.fc2 = nn.Conv2d(hidden, channels, 1, bias=False)
+        self.mlp = nn.Sequential(
+            nn.Conv2d(channels, hidden, 1, bias=False), 
+            nn.ReLU(True), 
+            nn.Conv2d(hidden, channels, 1, bias=False)
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        h, w = x.size(2), x.size(3)
-        spp_feats = []
-        for scale in self.scales:
-            # División espacial para pooling en rejillas
-            stride = (h // scale, w // scale)
-            kernel = (h // scale + (h % scale > 0), w // scale + (w % scale > 0))
-            avg_p = nn.functional.adaptive_avg_pool2d(nn.functional.avg_pool2d(x, kernel_size=kernel, stride=stride), 1)
-            max_p = nn.functional.adaptive_max_pool2d(nn.functional.max_pool2d(x, kernel_size=kernel, stride=stride), 1)
-            spp_feats.append(avg_p + max_p)
-        # Promedio y excitación de los canales
-        spp_sum = sum(spp_feats) / len(self.scales)
-        return x * torch.sigmoid(self.fc2(self.relu(self.fc1(spp_sum))))
+        # Concatenación de pooling promedio y máximo para capturar distribución de color
+        return x * torch.sigmoid(self.mlp(x.mean((2, 3), keepdim=True)) + self.mlp(x.amax((2, 3), keepdim=True)))
 
 class SpatialAttention(nn.Module):
     """
@@ -161,7 +176,7 @@ class SpatialAttention(nn.Module):
 class ResidualAttentionBlock(nn.Module):
     """
     DSTFS: Bloque residual que combina SPRelu (solo en stride=1 para preservar ruido espacial)
-    con atención dual (SA + CA con SPP) fusionada por SUMA en paralelo sobre el residuo.
+    con atención dual (SA + CA) fusionada por SUMA en paralelo sobre el residuo.
     """
     def __init__(self, in_c: int, out_c: int, stride: int = 1):
         super().__init__()
@@ -170,7 +185,7 @@ class ResidualAttentionBlock(nn.Module):
         # DSTFS: Particularidad crítica - SPRelu solo se añade en stride=1
         self.act1 = SoftThresholdPReLU(out_c) if stride == 1 else nn.PReLU(out_c)
         self.conv2 = nn.Conv2d(out_c, out_c, 3, padding=1, bias=False)
-        self.att_c, self.att_s = SPPChannelAttention(out_c), SpatialAttention()
+        self.att_c, self.att_s = ChannelAttention(out_c), SpatialAttention()
         self.act2 = nn.PReLU(out_c)
         self.skip = nn.Sequential(
             nn.Conv2d(in_c, out_c, 1, stride, bias=False), 
@@ -184,6 +199,9 @@ class ResidualAttentionBlock(nn.Module):
         att_res = self.att_c(res) + self.att_s(res)
         return self.act2(att_res + self.skip(x))
 
+# ==============================================================================
+# 6. DEFINICIÓN DE LA RED PRINCIPAL
+# ==============================================================================
 class ThermalDepartureTimeNet(nn.Module):
     """
     DSTFS Temporal (Tarea única): Stem -> 4 Stages -> Head.
@@ -220,54 +238,47 @@ class ThermalDepartureTimeNet(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.head(self.stage4(self.stage3(self.stage2(self.stage1(self.stem(x)))))).squeeze(1)
 
+# ==============================================================================
+# 7. PÉRDIDA Y MÉTRICAS DE EVALUACIÓN
+# ==============================================================================
 class SqrtScaledMSELoss(nn.Module):
     """
-    DSTFS: Pérdida temporal L = MSE(sqrt(pred), sqrt(target)).
+    DSTFS: Pérdida temporal L = MSE(sqrt(pred/s), sqrt(target/s)).
     La raíz cuadrada amplifica el error en tiempos pequeños (capturando mejor la fase inicial de enfriamiento rápido).
     """
     def forward(self, p: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
-        return nn.functional.mse_loss(torch.sqrt(p.clamp_min(1e-6)), torch.sqrt(t.clamp_min(1e-6)))
+        s = CONFIG["time_scale"]
+        return nn.functional.mse_loss(torch.sqrt((p / s).clamp_min(1e-6)), torch.sqrt((t / s).clamp_min(1e-6)))
 
-# --- ENTRENAMIENTO Y EVALUACIÓN ---
+def eval_metrics(model: nn.Module, loader: DataLoader, device: str) -> tuple[float, float, float, float]:
+    """Calcula MAE, RMSE y porcentaje de errores bajo 60s/120s para la evaluación."""
+    model.eval()
+    abs_err, sq_err, n, err60, err120 = 0.0, 0.0, 0, 0, 0
+    with torch.no_grad():
+        for x, y in loader:
+            x, y = x.to(device), y.to(device)
+            p = model(x)
+            abs_err += (p - y).abs().sum().item()
+            sq_err += ((p - y)**2).sum().item()
+            err60 += (p - y).abs().gt(60).sum().item()
+            err120 += (p - y).abs().gt(120).sum().item()
+            n += x.size(0)
+    return abs_err / n, (sq_err / n)**0.5, 1.0 - err60 / n, 1.0 - err120 / n
 
+# ==============================================================================
+# 8. EJECUCIÓN PRINCIPAL (ENTRENAMIENTO)
+# ==============================================================================
 def split_by_sequence(df: pd.DataFrame, fraction=0.8, seed=42):
-    """Garantiza separación estricta por secuencias de rastro para evitar fuga de información biográfica/tiempo."""
+    """Garantiza separación estricta por secuencias de rastro para evitar fuga de información."""
     seqs = df["sequence_id"].drop_duplicates().to_numpy()
     np.random.default_rng(seed).shuffle(seqs)
     train_seqs = set(seqs[:max(1, int(len(seqs) * fraction))])
     return df.index[df["sequence_id"].isin(train_seqs)].tolist(), df.index[~df["sequence_id"].isin(train_seqs)].tolist()
 
-def eval_metrics(model: nn.Module, loader: DataLoader, device: str) -> tuple[float, float, float, float]:
-    """Calcula MAE y RMSE en segundos reales desescalando la predicción y etiquetas (*30.0),
-    además de obtener el Accuracy dentro de márgenes de tolerancia de 60 y 120 segundos.
-    """
-    model.eval()
-    abs_err, sq_err, n = 0.0, 0.0, 0
-    acc60_count, acc120_count = 0, 0
-    scale = CONFIG["time_scale"]
-    
-    with torch.no_grad():
-        for x, y in loader:
-            x, y = x.to(device), y.to(device)
-            # Desescalamos a escala real en segundos antes de calcular métricas de reporte
-            p_s = model(x) * scale
-            y_s = y * scale
-            
-            # Acumulación de errores absolutos y cuadráticos
-            abs_err += (p_s - y_s).abs().sum().item()
-            sq_err += ((p_s - y_s)**2).sum().item()
-            
-            # Calcular exactitud dentro del umbral de 60s y 120s
-            errors = (p_s - y_s).abs()
-            acc60_count += errors.le(60).sum().item()
-            acc120_count += errors.le(120).sum().item()
-            
-            n += x.size(0)
-    
-    # Retorna: MAE, RMSE, Acc-60, Acc-120
-    return abs_err / n, (sq_err / n)**0.5, acc60_count / n, acc120_count / n
-
 def main():
+    # Establecer la semilla global para garantizar reproducibilidad absoluta
+    set_seed(42)
+    
     dev = CONFIG["device"]
     train_ds_full = ThermalTraceDataset(is_train=True)
     val_ds_full = ThermalTraceDataset(is_train=False)
@@ -300,23 +311,23 @@ def main():
             train_loss += loss.item() * x.size(0)
             n += x.size(0)
 
-        # scheduler de decaimiento escalonado
+        # Scheduler de decaimiento escalonado
         scheduler.step()
 
-        # Las métricas son reportadas en segundos desescalados reales para evaluar el error humano
+        # Evaluación en segundos reales
         v_mae, v_rmse, v_acc60, v_acc120 = eval_metrics(model, val_loader, dev)
         t_mae, _, _, _ = eval_metrics(model, train_eval_loader, dev)
 
         is_best = v_mae < best_mae - CONFIG["min_delta"]
-        if is_best:
+        if is_best: 
             best_mae, no_imp = v_mae, 0
             torch.save(model.state_dict(), "DSTFS_adapted_best.pt")
-        else:
+        else: 
             no_imp += 1
         
-        # Impresión limpia reportando MAE, RMSE, y los porcentajes de exactitud a 60s y 120s
+        # Impresión limpia reportando MAE, RMSE y porcentajes de exactitud
         print(f"Ep {ep:03d} | Loss: {train_loss/n:.4f} | TrMAE: {t_mae:5.2f}s | ValMAE: {v_mae:5.2f}s | "
-            f"RMSE: {v_rmse:5.2f}s | Acc60: {v_acc60:.2%} | Acc120: {v_acc120:.2%} {'*' if is_best else ''}")
+              f"RMSE: {v_rmse:5.2f}s | Acc60: {v_acc60:.2%} | Acc120: {v_acc120:.2%} {'*' if is_best else ''}")
         
         if no_imp >= CONFIG["patience"]: 
             print(f"Early stop. Best Val MAE: {best_mae:.2f}s")
