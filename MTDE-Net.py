@@ -43,7 +43,6 @@ CONFIG = {
     "batch_size": 16,
     "lr": 0.0005,          # SGD lr inicial (usado por AdamW como lr de partida)
     "weight_decay": 0.0005, # Regularización L2
-    "momentum": 0.9,       # SGD Momentum
     "min_time_s": 0.0,
     "device": "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu"),
     "time_scale": 30.0,    # Escalar etiquetas de tiempo
