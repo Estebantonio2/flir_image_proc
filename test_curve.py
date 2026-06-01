@@ -37,7 +37,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    metadata = pd.read_csv(PROCESSED_ROOT / "metadata.csv")
+    metadata = pd.read_csv(PROCESSED_ROOT / "metadata_train.csv")
     
     # Filtrar por persona y superficie
     mask = (metadata["name"].astype(str).str.lower() == args.person.lower()) & \

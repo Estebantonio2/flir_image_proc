@@ -23,6 +23,8 @@ class DatasetConfig:
     delta_t_dirname: str = "deltaT_npy"
 
     metadata_filename: str = "metadata.csv"
+    metadata_full_filename: str = "metadata_full.csv"
+    metadata_train_filename: str = "metadata_train.csv"
     warnings_filename: str = "processing_warnings.csv"
 
     excel_sheet_name: str = "List"

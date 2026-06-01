@@ -32,12 +32,12 @@ class MultimodalThermalDataset(Dataset):
     2. Vector tabular de variables ambientales (Temp, Humedad, Superficie One-Hot).
     3. Etiqueta de tiempo de partida escalada.
     """
-    def __init__(self, metadata_csv="processed_data/metadata.csv", is_train=True, min_time_s=0.0, time_scale=30.0):
+    def __init__(self, metadata_csv="processed_data/metadata_train.csv", is_train=True, min_time_s=0.0, time_scale=30.0):
         self.root = Path(metadata_csv).parent
         self.transform = _build_train_transform() if is_train else _build_val_transform()
         self.time_scale = time_scale
-        df = pd.read_csv(metadata_csv).dropna(subset=["thermal_path", "sequence_id", "label_time_s", "ambient_temp_C", "ambient_rh_pct", "surface"])
-        self.df = df[df["label_time_s"].astype(float) > min_time_s].reset_index(drop=True)
+        df = pd.read_csv(metadata_csv).dropna(subset=["thermal_path", "sequence_id", "t_seconds", "ambient_temp_C", "ambient_rh_pct", "surface"])
+        self.df = df[df["t_seconds"].astype(float) > min_time_s].reset_index(drop=True)
         self.df = self.df[[self._resolve(p).exists() for p in self.df["thermal_path"]]].reset_index(drop=True)
 
     def __len__(self) -> int: 
@@ -69,7 +69,7 @@ class MultimodalThermalDataset(Dataset):
         x_tab = torch.tensor([temp_norm, rh_norm, is_wood, is_glass], dtype=torch.float32)
 
         # 3. Escalado de etiqueta de tiempo
-        t_scaled = float(row["label_time_s"]) / self.time_scale
+        t_scaled = float(row["t_seconds"]) / self.time_scale
         
         return x_img, x_tab, torch.tensor(t_scaled, dtype=torch.float32)
 

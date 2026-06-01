@@ -45,7 +45,8 @@ def main() -> None:
     print(f"Muestras procesadas: {len(metadata)}")
     print(f"Advertencias: {len(warnings_df)}")
     print("Salida térmica/deltaT: ROI con tamaño original del recorte")
-    print(f"Metadata: {config.output_root / config.metadata_filename}")
+    print(f"Metadata Full: {config.output_root / config.metadata_full_filename}")
+    print(f"Metadata Train: {config.output_root / config.metadata_train_filename}")
     print(f"Warnings: {config.output_root / config.warnings_filename}")
 
 

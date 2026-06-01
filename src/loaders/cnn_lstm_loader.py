@@ -32,7 +32,7 @@ class ThermalSequenceDataset(Dataset):
     """
     def __init__(
         self, 
-        metadata_csv="processed_data/metadata.csv", 
+        metadata_csv="processed_data/metadata_train.csv", 
         is_train=True, 
         min_time_s=0.0, 
         seq_len=5,
@@ -43,8 +43,8 @@ class ThermalSequenceDataset(Dataset):
         self.seq_len = seq_len
         
         # Cargar y pre-filtrar metadatos básicos
-        df = pd.read_csv(metadata_csv).dropna(subset=["thermal_path", "sequence_id", "label_time_s"])
-        df = df[df["label_time_s"].astype(float) > min_time_s].reset_index(drop=True)
+        df = pd.read_csv(metadata_csv).dropna(subset=["thermal_path", "sequence_id", "t_seconds"])
+        df = df[df["t_seconds"].astype(float) > min_time_s].reset_index(drop=True)
         
         # Validar la existencia de archivos npy
         df = df[[self._resolve(p).exists() for p in df["thermal_path"]]].reset_index(drop=True)
@@ -62,7 +62,7 @@ class ThermalSequenceDataset(Dataset):
         grouped = self.df.groupby("sequence_id")
         for seq_id, group in grouped:
             # Ordenar cronológicamente dentro de cada secuencia
-            sorted_group = group.sort_values("label_time_s")
+            sorted_group = group.sort_values("t_seconds")
             indices = sorted_group.index.tolist()
             
             # Construir ventanas móviles si hay suficientes snapshots
@@ -99,7 +99,7 @@ class ThermalSequenceDataset(Dataset):
         
         # El tiempo objetivo es el del último fotograma de la ventana
         last_row = self.df.iloc[window_indices[-1]]
-        y = torch.tensor(float(last_row["label_time_s"]), dtype=torch.float32)
+        y = torch.tensor(float(last_row["t_seconds"]), dtype=torch.float32)
         
         return x_seq, y
 

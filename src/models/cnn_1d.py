@@ -8,6 +8,7 @@ class Thermal1DCNN(nn.Module):
     """
     def __init__(self, in_channels: int = 4, dropout: float = 0.1):
         super().__init__()
+        self.in_channels = in_channels
         
         # Convolución 1D multicanal
         self.conv = nn.Sequential(
@@ -36,9 +37,9 @@ class Thermal1DCNN(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x esperado: (B, C, W) donde C = 4 features y W = seq_len
+        # x esperado: (B, C, W) donde C = in_channels y W = seq_len
         # Si la entrada nos llega como (B, W, C), le hacemos transpose para conv1d
-        if x.dim() == 3 and x.size(1) != 4 and x.size(2) == 4:
+        if x.dim() == 3 and x.size(1) != self.in_channels and x.size(2) == self.in_channels:
             x = x.transpose(1, 2)
             
         feats = self.conv(x)      # Salida: (B, 64, W)

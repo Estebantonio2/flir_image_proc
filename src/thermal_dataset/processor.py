@@ -45,12 +45,17 @@ def build_clean_dataset(config: DatasetConfig) -> tuple[pd.DataFrame, pd.DataFra
     all_rows: list[dict] = []
     all_warnings: list[dict] = []
 
+    metadata_full_path = config.output_root / config.metadata_full_filename
     metadata_path = config.output_root / config.metadata_filename
     warnings_path = config.output_root / config.warnings_filename
 
-    if metadata_path.exists() and not config.overwrite_existing:
-        print(f"Cargando metadata existente desde {metadata_path}...")
-        all_rows = _read_csv_records_if_not_empty(metadata_path)
+    if not config.overwrite_existing:
+        if metadata_full_path.exists():
+            print(f"Cargando metadata existente desde {metadata_full_path}...")
+            all_rows = _read_csv_records_if_not_empty(metadata_full_path)
+        elif metadata_path.exists():
+            print(f"Cargando metadata existente desde {metadata_path}...")
+            all_rows = _read_csv_records_if_not_empty(metadata_path)
 
     if warnings_path.exists() and not config.overwrite_existing:
         all_warnings = _read_csv_records_if_not_empty(warnings_path)
@@ -127,11 +132,37 @@ def build_clean_dataset(config: DatasetConfig) -> tuple[pd.DataFrame, pd.DataFra
             ["sequence_id", "snapshot_number"]
         ).reset_index(drop=True)
 
-    metadata_path = config.output_root / config.metadata_filename
+    metadata_full_path = config.output_root / config.metadata_full_filename
+    metadata_train_path = config.output_root / config.metadata_train_filename
     warnings_path = config.output_root / config.warnings_filename
 
-    metadata.to_csv(metadata_path, index=False)
-    warnings_df.to_csv(warnings_path, index=False)
+    # Guardar metadata_full (todas las columnas de trazabilidad)
+    try:
+        metadata.to_csv(metadata_full_path, index=False)
+    except PermissionError as e:
+        print(f"Error de permisos: No se pudo guardar '{metadata_full_path}'. ¿Está abierto en otra aplicación (ej. Excel)? {e}")
+        raise
+
+    # Crear y guardar versión reducida para entrenamiento (metadata_train)
+    train_columns = [
+        "sample_id", "sequence_id", "snapshot_number", "name", "surface", "hand",
+        "image_path", "thermal_path", "deltaT_path", "capture_datetime", "t_seconds",
+        "ambient_temp_C", "ambient_rh_pct", "roi_x1", "roi_y1", "roi_x2", "roi_y2",
+        "img_tmin_C", "img_tmean_C", "img_tmax_C", "img_tstd_C",
+        "delta_tmin_C", "delta_tmean_C", "delta_tmax_C", "delta_tstd_C",
+        "hot_threshold_deltaT_C", "hot_area_px_p95", "hot_tmean_C_p95", "hot_delta_tmean_C_p95"
+    ]
+    metadata_train = metadata.reindex(columns=train_columns)
+    try:
+        metadata_train.to_csv(metadata_train_path, index=False)
+    except PermissionError as e:
+        print(f"Error de permisos: No se pudo guardar '{metadata_train_path}'. ¿Está abierto en otra aplicación (ej. Excel)? {e}")
+        raise
+
+    try:
+        warnings_df.to_csv(warnings_path, index=False)
+    except PermissionError as e:
+        print(f"Advertencia: No se pudo escribir en '{warnings_path}' porque está bloqueado por otro proceso.")
 
     return metadata, warnings_df
 
@@ -385,7 +416,6 @@ def process_single_image(
 
         "capture_datetime": capture_datetime.isoformat(sep=" "),
         "t_seconds": elapsed_seconds,
-        "label_time_s": elapsed_seconds,
 
         "ambient_temp_C": environment["ambient_temp_C"],
         "ambient_rh_pct": environment["ambient_rh_pct"],
