@@ -11,7 +11,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "person_surface",
         nargs="?",
-        help="Carpeta a reprocesar, por ejemplo: esteban_madera.",
+        help=(
+            "Persona o superficie a reprocesar. Ejemplos: esteban, "
+            "esteban/madera, esteban_madera."
+        ),
     )
     parser.add_argument(
         "test_num",
@@ -37,7 +40,10 @@ def main() -> None:
     )
 
     if args.test_num is not None and args.person_surface is None:
-        raise ValueError("Para indicar una secuencia también debes indicar la carpeta, por ejemplo: esteban_madera 1")
+        raise ValueError(
+            "Para indicar una secuencia también debes indicar la persona/superficie, "
+            "por ejemplo: esteban/madera 1"
+        )
 
     metadata, warnings_df = build_clean_dataset(config)
 

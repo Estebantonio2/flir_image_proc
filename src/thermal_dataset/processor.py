@@ -1,4 +1,5 @@
 from pathlib import Path
+from dataclasses import dataclass
 
 import cv2
 import pandas as pd
@@ -41,6 +42,155 @@ TEN_MINUTE_CAPTURE_TIMES_S = (
 PRE_HAND_CAPTURE_TIMES_S = PRE_HAND_BASELINE_TIMES_S + TEN_MINUTE_CAPTURE_TIMES_S
 
 
+@dataclass(frozen=True)
+class RawPersonSurface:
+    person: str
+    raw_person: str
+    gender: str
+    raw_surface: str
+    surface: str
+    path: Path
+
+    @property
+    def dirname(self) -> str:
+        return f"{self.person}_{self.surface}"
+
+    @property
+    def raw_dirname(self) -> str:
+        return f"{self.raw_person}_{self.raw_surface}"
+
+
+def discover_person_surface_dirs(raw_root: Path) -> list[RawPersonSurface]:
+    """Discover raw data in persona/superficie and legacy persona_superficie layouts."""
+    sessions: list[RawPersonSurface] = []
+
+    for first_level_dir in list_test_dirs(raw_root):
+        nested_sessions = _discover_nested_person_surface_dirs(first_level_dir)
+        if nested_sessions:
+            sessions.extend(nested_sessions)
+            continue
+
+        legacy_session = _parse_legacy_person_surface_dir(first_level_dir)
+        if legacy_session is not None:
+            sessions.append(legacy_session)
+
+    return sorted(
+        sessions,
+        key=lambda session: (
+            session.person,
+            session.surface,
+            session.raw_surface,
+            session.path.as_posix(),
+        ),
+    )
+
+
+def _discover_nested_person_surface_dirs(person_dir: Path) -> list[RawPersonSurface]:
+    raw_person = person_dir.name.strip().lower()
+    person, gender = _parse_person_and_gender(raw_person)
+    sessions: list[RawPersonSurface] = []
+
+    for surface_dir in list_test_dirs(person_dir):
+        raw_surface = surface_dir.name.strip().lower()
+        if not _looks_like_person_surface_data_dir(surface_dir):
+            continue
+
+        sessions.append(
+            RawPersonSurface(
+                person=person,
+                raw_person=raw_person,
+                gender=gender,
+                raw_surface=raw_surface,
+                surface=translate_token(raw_surface),
+                path=surface_dir,
+            )
+        )
+
+    return sessions
+
+
+def _parse_legacy_person_surface_dir(person_surface_dir: Path) -> RawPersonSurface | None:
+    dirname = person_surface_dir.name.strip().lower()
+    parts = dirname.split("_")
+    if len(parts) < 2:
+        return None
+
+    if not _looks_like_person_surface_data_dir(person_surface_dir):
+        return None
+
+    if parts[0] in {"0", "1"} and len(parts) >= 3:
+        raw_person = "_".join(parts[:2])
+        raw_surface = "_".join(parts[2:])
+    else:
+        raw_person = parts[0]
+        raw_surface = "_".join(parts[1:])
+
+    person, gender = _parse_person_and_gender(raw_person)
+    return RawPersonSurface(
+        person=person,
+        raw_person=raw_person,
+        gender=gender,
+        raw_surface=raw_surface,
+        surface=translate_token(raw_surface),
+        path=person_surface_dir,
+    )
+
+
+def _parse_person_and_gender(raw_person: str) -> tuple[str, str]:
+    parts = raw_person.split("_", maxsplit=1)
+    if len(parts) == 2 and parts[0] == "0":
+        return parts[1], "male"
+
+    if len(parts) == 2 and parts[0] == "1":
+        return parts[1], "female"
+
+    return raw_person, "unknown"
+
+
+def _looks_like_person_surface_data_dir(path: Path) -> bool:
+    return any(child.is_dir() and child.name.startswith("test_") for child in path.iterdir())
+
+
+def _list_sequence_dirs(person_surface_dir: Path) -> list[Path]:
+    return sorted(
+        path for path in list_test_dirs(person_surface_dir)
+        if path.name.startswith("test_")
+    )
+
+
+def _matches_target_person_surface(
+    person_surface: RawPersonSurface,
+    target: str,
+) -> bool:
+    normalized_target = target.strip().lower().replace("\\", "/")
+    if not normalized_target:
+        return False
+
+    target_parts = [part for part in normalized_target.split("/") if part]
+
+    if len(target_parts) == 2:
+        target_person, target_surface = target_parts
+        translated_surface = translate_token(target_surface)
+        return (
+            target_person in {person_surface.person, person_surface.raw_person}
+            and person_surface.surface == translated_surface
+        )
+
+    aliases = {
+        person_surface.person,
+        person_surface.raw_person,
+        person_surface.path.name.lower(),
+        person_surface.dirname.lower(),
+        person_surface.raw_dirname.lower(),
+        f"{person_surface.person}/{person_surface.raw_surface}",
+        f"{person_surface.person}/{person_surface.surface}",
+        f"{person_surface.raw_person}/{person_surface.raw_surface}",
+        f"{person_surface.raw_person}/{person_surface.surface}",
+    }
+
+    return normalized_target in aliases
+
+
 def build_clean_dataset(config: DatasetConfig) -> tuple[pd.DataFrame, pd.DataFrame]:
     all_rows: list[dict] = []
     all_warnings: list[dict] = []
@@ -60,27 +210,30 @@ def build_clean_dataset(config: DatasetConfig) -> tuple[pd.DataFrame, pd.DataFra
     if warnings_path.exists() and not config.overwrite_existing:
         all_warnings = _read_csv_records_if_not_empty(warnings_path)
 
-    person_dirs = list_test_dirs(config.raw_root)
+    person_surface_dirs = discover_person_surface_dirs(config.raw_root)
     if config.target_person_surface is not None:
-        person_dirs = [
-            person_dir for person_dir in person_dirs
-            if person_dir.name == config.target_person_surface
+        person_surface_dirs = [
+            person_surface for person_surface in person_surface_dirs
+            if _matches_target_person_surface(
+                person_surface=person_surface,
+                target=config.target_person_surface,
+            )
         ]
-        if not person_dirs:
+        if not person_surface_dirs:
             raise FileNotFoundError(
                 f"No existe la carpeta solicitada en raw_data: {config.target_person_surface}"
             )
 
-    for person_dir in person_dirs:
-        person_name_raw = person_dir.name
-        parts = person_name_raw.split("_")
-        person = parts[0]
-        raw_surface = parts[1] if len(parts) > 1 else "unknown"
-        surface = translate_token(raw_surface)
-
-        person_surface_dirname = f"{person}_{surface}"
+    for person_surface in person_surface_dirs:
+        person = person_surface.person
+        gender = person_surface.gender
+        surface = person_surface.surface
+        person_surface_dirname = person_surface.dirname
         output_dir = config.output_root / person_surface_dirname
-        is_target_person = config.target_person_surface in {person_dir.name, person_surface_dirname}
+        is_target_person = (
+            config.target_person_surface is not None
+            and _matches_target_person_surface(person_surface, config.target_person_surface)
+        )
         
         if output_dir.exists() and not config.overwrite_existing and not is_target_person:
             print(f"La carpeta '{person_surface_dirname}' ya existe en processed_data. Omitiendo procesamiento...")
@@ -89,7 +242,7 @@ def build_clean_dataset(config: DatasetConfig) -> tuple[pd.DataFrame, pd.DataFra
         print(f"Procesando carpeta: '{person_surface_dirname}'...")
         create_output_dirs(output_dir)
         
-        test_dirs = list_test_dirs(person_dir)
+        test_dirs = _list_sequence_dirs(person_surface.path)
         if config.target_test_num is not None:
             if config.target_test_num < 1 or config.target_test_num > len(test_dirs):
                 raise ValueError(
@@ -101,7 +254,7 @@ def build_clean_dataset(config: DatasetConfig) -> tuple[pd.DataFrame, pd.DataFra
         for i, test_dir in enumerate(test_dirs, 1):
             test_num = config.target_test_num if config.target_test_num is not None else i
             rows, warnings = process_sequence_folder(
-                test_dir, person_dir, person, surface, test_num, config
+                test_dir, person_surface.path, person, gender, surface, test_num, config
             )
             all_rows.extend(rows)
             all_warnings.extend(warnings)
@@ -145,7 +298,7 @@ def build_clean_dataset(config: DatasetConfig) -> tuple[pd.DataFrame, pd.DataFra
 
     # Crear y guardar versión reducida para entrenamiento (metadata_train)
     train_columns = [
-        "sample_id", "sequence_id", "snapshot_number", "name", "surface", "hand",
+        "sample_id", "sequence_id", "snapshot_number", "name", "gender", "surface", "hand",
         "image_path", "thermal_path", "deltaT_path", "capture_datetime", "t_seconds",
         "ambient_temp_C", "ambient_rh_pct", "roi_x1", "roi_y1", "roi_x2", "roi_y2",
         "img_tmin_C", "img_tmean_C", "img_tmax_C", "img_tstd_C",
@@ -171,6 +324,7 @@ def process_sequence_folder(
     sequence_dir: Path,
     person_dir: Path,
     person: str,
+    gender: str,
     surface: str,
     test_num: int,
     config: DatasetConfig,
@@ -245,6 +399,7 @@ def process_sequence_folder(
                 sequence_id=new_sequence_id,
                 person_surface_dirname=person_surface_dirname,
                 person=person,
+                gender=gender,
                 surface=surface,
                 start_datetime=start_datetime,
                 env_df=env_df,
@@ -323,6 +478,7 @@ def process_single_image(
     sequence_id: str,
     person_surface_dirname: str,
     person: str,
+    gender: str,
     surface: str,
     start_datetime,
     env_df: pd.DataFrame | None,
@@ -406,6 +562,7 @@ def process_single_image(
         "sequence_id": sequence_id,
         "snapshot_number": snapshot_number,
         "name": person,
+        "gender": gender,
         "surface": surface,
         "hand": "right",
 
