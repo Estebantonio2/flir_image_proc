@@ -49,6 +49,7 @@ class RawPersonSurface:
     gender: str
     raw_surface: str
     surface: str
+    is_complete: bool
     path: Path
 
     @property
@@ -92,6 +93,7 @@ def _discover_nested_person_surface_dirs(person_dir: Path) -> list[RawPersonSurf
 
     for surface_dir in list_test_dirs(person_dir):
         raw_surface = surface_dir.name.strip().lower()
+        surface_name, is_complete = _parse_surface_and_completeness(raw_surface)
         if not _looks_like_person_surface_data_dir(surface_dir):
             continue
 
@@ -101,7 +103,8 @@ def _discover_nested_person_surface_dirs(person_dir: Path) -> list[RawPersonSurf
                 raw_person=raw_person,
                 gender=gender,
                 raw_surface=raw_surface,
-                surface=translate_token(raw_surface),
+                surface=translate_token(surface_name),
+                is_complete=is_complete,
                 path=surface_dir,
             )
         )
@@ -126,12 +129,14 @@ def _parse_legacy_person_surface_dir(person_surface_dir: Path) -> RawPersonSurfa
         raw_surface = "_".join(parts[1:])
 
     person, gender = _parse_person_and_gender(raw_person)
+    surface_name, is_complete = _parse_surface_and_completeness(raw_surface)
     return RawPersonSurface(
         person=person,
         raw_person=raw_person,
         gender=gender,
         raw_surface=raw_surface,
-        surface=translate_token(raw_surface),
+        surface=translate_token(surface_name),
+        is_complete=is_complete,
         path=person_surface_dir,
     )
 
@@ -145,6 +150,13 @@ def _parse_person_and_gender(raw_person: str) -> tuple[str, str]:
         return parts[1], "female"
 
     return raw_person, "unknown"
+
+
+def _parse_surface_and_completeness(raw_surface: str) -> tuple[str, bool]:
+    if raw_surface.startswith("x_"):
+        return raw_surface[2:], False
+
+    return raw_surface, True
 
 
 def _looks_like_person_surface_data_dir(path: Path) -> bool:
@@ -170,6 +182,7 @@ def _matches_target_person_surface(
 
     if len(target_parts) == 2:
         target_person, target_surface = target_parts
+        target_surface, _ = _parse_surface_and_completeness(target_surface)
         translated_surface = translate_token(target_surface)
         return (
             target_person in {person_surface.person, person_surface.raw_person}
@@ -228,6 +241,7 @@ def build_clean_dataset(config: DatasetConfig) -> tuple[pd.DataFrame, pd.DataFra
         person = person_surface.person
         gender = person_surface.gender
         surface = person_surface.surface
+        is_complete = person_surface.is_complete
         person_surface_dirname = person_surface.dirname
         output_dir = config.output_root / person_surface_dirname
         is_target_person = (
@@ -254,7 +268,7 @@ def build_clean_dataset(config: DatasetConfig) -> tuple[pd.DataFrame, pd.DataFra
         for i, test_dir in enumerate(test_dirs, 1):
             test_num = config.target_test_num if config.target_test_num is not None else i
             rows, warnings = process_sequence_folder(
-                test_dir, person_surface.path, person, gender, surface, test_num, config
+                test_dir, person_surface.path, person, gender, surface, is_complete, test_num, config
             )
             all_rows.extend(rows)
             all_warnings.extend(warnings)
@@ -298,7 +312,8 @@ def build_clean_dataset(config: DatasetConfig) -> tuple[pd.DataFrame, pd.DataFra
 
     # Crear y guardar versión reducida para entrenamiento (metadata_train)
     train_columns = [
-        "sample_id", "sequence_id", "snapshot_number", "name", "gender", "surface", "hand",
+        "sample_id", "sequence_id", "snapshot_number", "name", "gender", "surface",
+        "is_complete", "hand",
         "image_path", "thermal_path", "deltaT_path", "capture_datetime", "t_seconds",
         "ambient_temp_C", "ambient_rh_pct", "roi_x1", "roi_y1", "roi_x2", "roi_y2",
         "img_tmin_C", "img_tmean_C", "img_tmax_C", "img_tstd_C",
@@ -326,6 +341,7 @@ def process_sequence_folder(
     person: str,
     gender: str,
     surface: str,
+    is_complete: bool,
     test_num: int,
     config: DatasetConfig,
 ) -> tuple[list[dict], list[dict]]:
@@ -401,6 +417,7 @@ def process_sequence_folder(
                 person=person,
                 gender=gender,
                 surface=surface,
+                is_complete=is_complete,
                 start_datetime=start_datetime,
                 env_df=env_df,
                 config=config,
@@ -480,6 +497,7 @@ def process_single_image(
     person: str,
     gender: str,
     surface: str,
+    is_complete: bool,
     start_datetime,
     env_df: pd.DataFrame | None,
     config: DatasetConfig,
@@ -564,6 +582,7 @@ def process_single_image(
         "name": person,
         "gender": gender,
         "surface": surface,
+        "is_complete": is_complete,
         "hand": "right",
 
         "source_image_path": str(image_path),
