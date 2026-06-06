@@ -312,13 +312,21 @@ def build_clean_dataset(config: DatasetConfig) -> tuple[pd.DataFrame, pd.DataFra
 
     # Crear y guardar versión reducida para entrenamiento (metadata_train)
     train_columns = [
-        "sample_id", "sequence_id", "snapshot_number", "name", "gender", "surface",
-        "is_complete", "hand",
-        "image_path", "thermal_path", "deltaT_path", "capture_datetime", "t_seconds",
-        "ambient_temp_C", "ambient_rh_pct", "roi_x1", "roi_y1", "roi_x2", "roi_y2",
-        "img_tmin_C", "img_tmean_C", "img_tmax_C", "img_tstd_C",
-        "delta_tmin_C", "delta_tmean_C", "delta_tmax_C", "delta_tstd_C",
-        "hot_threshold_deltaT_C", "hot_area_px_p95", "hot_tmean_C_p95", "hot_delta_tmean_C_p95"
+        "sequence_id",
+        "name",
+        "gender",
+        "surface",
+        "is_complete",
+        "thermal_path",
+        "t_seconds",
+        "ambient_temp_C",
+        "ambient_rh_pct",
+        "img_tmax_C",
+        "img_tstd_C",
+        "delta_tmean_C",
+        "delta_tstd_C",
+        "hot_area_px_p95",
+        "hot_delta_tmean_C_p95",
     ]
     metadata_train = metadata.reindex(columns=train_columns)
     try:
@@ -589,7 +597,6 @@ def process_single_image(
         "source_image_path": str(image_path),
         "image_path": image_relpath.as_posix() if config.copy_raw_jpg else str(image_path),
         "thermal_path": thermal_relpath.as_posix(),
-        "deltaT_path": delta_t_relpath.as_posix(),
 
         "capture_datetime": capture_datetime.isoformat(sep=" "),
         "t_seconds": elapsed_seconds,

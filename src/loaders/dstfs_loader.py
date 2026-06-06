@@ -15,7 +15,6 @@ def _build_train_transform() -> transforms.Compose:
         transforms.RandomRotation(10), 
         transforms.RandomAffine(0, translate=(0.1, 0.1)),
         transforms.RandomHorizontalFlip(), 
-        transforms.RandomCrop(200),
         transforms.Resize((112, 112)), 
         transforms.ToTensor(),
     ])

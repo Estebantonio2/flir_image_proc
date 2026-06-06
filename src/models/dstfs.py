@@ -85,7 +85,7 @@ class ThermalDepartureTimeNet(nn.Module):
     DSTFS Temporal (Tarea única): Backbone compartido (Stem -> Stage 1-3) -> 
     Branch temporal (Stage 4 -> Módulo de atención dual paralelo -> Head de regresión lineal).
     """
-    def __init__(self):
+    def __init__(self, dropout: float = 0.25):
         super().__init__()
         self.stem = nn.Sequential(
             nn.Conv2d(1, 64, 7, 2, 3, bias=False), 
@@ -112,7 +112,7 @@ class ThermalDepartureTimeNet(nn.Module):
         self.head = nn.Sequential(
             nn.AdaptiveAvgPool2d(1), 
             nn.Flatten(), 
-            nn.Dropout(0.25), 
+            nn.Dropout(dropout), 
             nn.Linear(512, 512), 
             nn.PReLU(512), 
             nn.Linear(512, 1) # Salida lineal continua sin Softplus

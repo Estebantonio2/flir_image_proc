@@ -1,5 +1,5 @@
 from .losses import SqrtScaledMSELoss
-from .metrics import eval_dstfs_metrics, eval_mtde_net_metrics, eval_cnn_lstm_metrics, eval_cnn_1d_metrics
+from .metrics import eval_dstfs_metrics, eval_mtde_net_metrics, eval_mtde_net_v2_metrics, eval_cnn_lstm_metrics, eval_cnn_1d_metrics
 from .data_utils import (
     SubjectCvFold,
     SubjectSplitPlan,
@@ -15,6 +15,7 @@ __all__ = [
     "SqrtScaledMSELoss",
     "eval_dstfs_metrics",
     "eval_mtde_net_metrics",
+    "eval_mtde_net_v2_metrics",
     "eval_cnn_lstm_metrics",
     "eval_cnn_1d_metrics",
     "SubjectCvFold",

@@ -8,12 +8,14 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 
 def _build_train_transform() -> transforms.Compose:
-    """Aumento de datos secuencial leve para estabilizar el entrenamiento temporal."""
+    """Transformación de entrenamiento con aumentos geométricos estándar robustos."""
     return transforms.Compose([
         transforms.ToPILImage(), 
-        transforms.Resize((112, 112)),
-        transforms.RandomRotation(5),
+        transforms.Resize((224, 224)),
+        transforms.RandomRotation(10), 
+        transforms.RandomAffine(0, translate=(0.1, 0.1)),
         transforms.RandomHorizontalFlip(), 
+        transforms.Resize((112, 112)), 
         transforms.ToTensor(),
     ])
 

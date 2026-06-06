@@ -48,6 +48,12 @@ def eval_cnn_1d_metrics(model: nn.Module, loader: DataLoader, device: str) -> di
     """
     return eval_dstfs_metrics(model, loader, device)
 
+def eval_mtde_net_v2_metrics(model: nn.Module, loader: DataLoader, device: str, scale: float = 30.0) -> dict[str, float]:
+    """
+    Calcula las métricas unificadas para el modelo MTDE-Net v2 desescalando las predicciones a segundos reales.
+    """
+    return eval_mtde_net_metrics(model, loader, device, scale=scale)
+
 def _compute_metrics(all_p: torch.Tensor, all_y: torch.Tensor) -> dict[str, float]:
     """
     Función interna para calcular MAE, RMSE, R2, MAPE, Acc60, Acc120.

@@ -27,20 +27,54 @@ def _build_val_transform() -> transforms.Compose:
         transforms.ToTensor()
     ])
 
-class MultimodalThermalDataset(Dataset):
+class MultimodalThermalDatasetV2(Dataset):
     """
-    Dataset Multimodal que carga:
+    Dataset Multimodal V2 que carga:
     1. Imagen térmica normalizada a [-1, 1].
-    2. Vector tabular de variables ambientales (Temp, Humedad, Superficie One-Hot).
+    2. Vector tabular con 8 variables continuas normalizadas y 4 categóricas codificadas (one-hot).
     3. Etiqueta de tiempo de partida escalada.
     """
-    def __init__(self, metadata_csv="processed_data/metadata_train.csv", is_train=True, min_time_s=0.0, time_scale=30.0):
+    def __init__(
+        self, 
+        metadata_csv="processed_data/metadata_train.csv", 
+        is_train=True, 
+        min_time_s=0.0, 
+        time_scale=30.0,
+        indices=None,
+        means=None,
+        stds=None
+    ):
         self.root = Path(metadata_csv).parent
         self.transform = _build_train_transform() if is_train else _build_val_transform()
         self.time_scale = time_scale
-        df = pd.read_csv(metadata_csv).dropna(subset=["thermal_path", "sequence_id", "t_seconds", "ambient_temp_C", "ambient_rh_pct", "surface"])
-        self.df = df[df["t_seconds"].astype(float) > min_time_s].reset_index(drop=True)
-        self.df = self.df[[self._resolve(p).exists() for p in self.df["thermal_path"]]].reset_index(drop=True)
+        
+        # Cargar y pre-filtrar
+        df = pd.read_csv(metadata_csv).dropna(
+            subset=["thermal_path", "sequence_id", "t_seconds", "ambient_temp_C", "ambient_rh_pct", "surface", "gender"]
+        )
+        df = df[df["t_seconds"].astype(float) > min_time_s].reset_index(drop=True)
+        df = df[[self._resolve(p).exists() for p in df["thermal_path"]]].reset_index(drop=True)
+        
+        # Filtrar por índices de fold si es necesario
+        if indices is not None:
+            self.df = df.iloc[indices].reset_index(drop=True)
+        else:
+            self.df = df
+            
+        self.continuous_cols = [
+            "ambient_temp_C", "ambient_rh_pct", "img_tmax_C", "img_tstd_C",
+            "delta_tmean_C", "delta_tstd_C", "hot_area_px_p95", "hot_delta_tmean_C_p95"
+        ]
+        
+        # Calcular medias y stds en entrenamiento o heredar en validación/test
+        if means is None or stds is None:
+            self.means = self.df[self.continuous_cols].mean().values.astype(np.float32)
+            self.stds = self.df[self.continuous_cols].std().values.astype(np.float32)
+            # Reemplazar ceros o std muy pequeños para evitar divisiones por cero
+            self.stds[self.stds < 1e-6] = 1.0
+        else:
+            self.means = means
+            self.stds = stds
 
     def __len__(self) -> int: 
         return len(self.df)
@@ -61,14 +95,20 @@ class MultimodalThermalDataset(Dataset):
         else: 
             x_img = torch.zeros_like(x_img)
 
-        # 2. Procesamiento Tabular de variables ambientales
-        temp_norm = (float(row["ambient_temp_C"]) - 15.0) / 20.0
-        rh_norm = (float(row["ambient_rh_pct"]) - 40.0) / 50.0
+        # 2. Procesamiento Tabular
+        cont_vals = (row[self.continuous_cols].values.astype(np.float32) - self.means) / self.stds
         
         is_wood = 1.0 if str(row["surface"]).lower() == "wood" else 0.0
         is_glass = 1.0 if str(row["surface"]).lower() == "glass" else 0.0
         
-        x_tab = torch.tensor([temp_norm, rh_norm, is_wood, is_glass], dtype=torch.float32)
+        gender_male = 1.0 if str(row["gender"]).lower() == "male" else 0.0
+        gender_female = 1.0 if str(row["gender"]).lower() == "female" else 0.0
+        
+        # Vector final tabular: 8 continuas normalizadas + 4 binarias = 12 dimensiones
+        x_tab = torch.cat([
+            torch.tensor(cont_vals, dtype=torch.float32),
+            torch.tensor([is_wood, is_glass, gender_male, gender_female], dtype=torch.float32)
+        ], dim=0)
 
         # 3. Escalado de etiqueta de tiempo
         t_scaled = float(row["t_seconds"]) / self.time_scale

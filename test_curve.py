@@ -58,7 +58,7 @@ def main() -> None:
 
     for seq_id in sequences:
         print(f"Procesando secuencia: {seq_id}...")
-        seq_rows = filtered_meta[filtered_meta["sequence_id"] == seq_id].sort_values("snapshot_number")
+        seq_rows = filtered_meta[filtered_meta["sequence_id"] == seq_id].sort_values("t_seconds")
         
         try:
             curve = build_curve_for_sequence(seq_rows, args)
