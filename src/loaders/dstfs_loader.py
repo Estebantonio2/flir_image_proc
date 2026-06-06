@@ -33,9 +33,10 @@ class ThermalTraceDataset(Dataset):
     Dataset para imágenes térmicas brutas (sin deltaT) para forzar al modelo 
     a aprender la física de disipación directamente del rastro térmico absoluto.
     """
-    def __init__(self, metadata_csv="processed_data/metadata_train.csv", is_train=True, min_time_s=0.0):
+    def __init__(self, metadata_csv="processed_data/metadata_train.csv", is_train=True, min_time_s=0.0, time_scale: float = 1.0):
         self.root = Path(metadata_csv).parent
         self.transform = _build_train_transform() if is_train else _build_val_transform()
+        self.time_scale = time_scale
         df = pd.read_csv(metadata_csv).dropna(subset=["thermal_path", "sequence_id", "t_seconds"])
         self.df = df[df["t_seconds"].astype(float) > min_time_s].reset_index(drop=True)
         self.df = self.df[[self._resolve(p).exists() for p in self.df["thermal_path"]]].reset_index(drop=True)
@@ -59,7 +60,8 @@ class ThermalTraceDataset(Dataset):
         else: 
             x = torch.zeros_like(x)
 
-        return x, torch.tensor(float(row["t_seconds"]), dtype=torch.float32)
+        t_scaled = float(row["t_seconds"]) / self.time_scale
+        return x, torch.tensor(t_scaled, dtype=torch.float32)
 
     def _resolve(self, p: str) -> Path:
         path = Path(str(p).replace("\\", "/"))

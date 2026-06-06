@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-def eval_dstfs_metrics(model: nn.Module, loader: DataLoader, device: str) -> dict[str, float]:
+def eval_dstfs_metrics(model: nn.Module, loader: DataLoader, device: str, scale: float = 1.0) -> dict[str, float]:
     """
     Calcula las métricas unificadas para el modelo DSTFS en segundos reales.
     """
@@ -14,8 +14,8 @@ def eval_dstfs_metrics(model: nn.Module, loader: DataLoader, device: str) -> dic
         for x, y in loader:
             x, y = x.to(device), y.to(device)
             p = model(x)
-            all_preds.append(p.cpu())
-            all_targets.append(y.cpu())
+            all_preds.append(p.cpu() * scale)
+            all_targets.append(y.cpu() * scale)
             
     return _compute_metrics(torch.cat(all_preds, dim=0), torch.cat(all_targets, dim=0))
 

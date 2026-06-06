@@ -254,7 +254,7 @@ def build_clean_dataset(config: DatasetConfig) -> tuple[pd.DataFrame, pd.DataFra
             continue
             
         print(f"Procesando carpeta: '{person_surface_dirname}'...")
-        create_output_dirs(output_dir)
+        create_output_dirs(output_dir, save_delta_t_npy=config.save_delta_t_npy)
         
         test_dirs = _list_sequence_dirs(person_surface.path)
         if config.target_test_num is not None:
@@ -570,10 +570,11 @@ def process_single_image(
     )
 
     thermal_abspath = config.output_root / thermal_relpath
-    delta_t_abspath = config.output_root / delta_t_relpath
-
     save_npy(thermal_abspath, thermal)
-    save_npy(delta_t_abspath, delta_t)
+
+    if config.save_delta_t_npy:
+        delta_t_abspath = config.output_root / delta_t_relpath
+        save_npy(delta_t_abspath, delta_t)
 
     row = {
         "sample_id": sample_id,

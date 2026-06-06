@@ -21,3 +21,6 @@ processed_data/
 
 # Models
 *.pt
+
+# Database
+*.db

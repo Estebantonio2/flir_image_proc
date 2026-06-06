@@ -8,6 +8,7 @@ class DatasetConfig:
     output_root: Path = Path("processed_data")
 
     copy_raw_jpg: bool = True
+    save_delta_t_npy: bool = False
     use_interpolation: bool = True
     max_environment_time_diff_s: float = 60.0
     overwrite_existing: bool = True

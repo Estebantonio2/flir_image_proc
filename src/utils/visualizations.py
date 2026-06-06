@@ -96,8 +96,8 @@ def plot_error_by_time_window(y_true: np.ndarray, y_pred: np.ndarray, model_name
     abs_err = np.abs(y_true - y_pred)
     
     # Definir ventanas de tiempo reales (segundos)
-    bins = [0, 60, 120, 180, float("inf")]
-    labels = ["0-60s\n(Inicial)", "60-120s\n(Medio)", "120-180s\n(Tardío)", "180s+\n(Límite Físico)"]
+    bins = [0, 60, 180, 360, float("inf")]
+    labels = ["0-60s\n(0-1 min)", "60-180s\n(1-3 min)", "180-360s\n(3-6 min)", "360s+\n(>6 min)"]
     
     # Agrupar datos en contenedores
     indices = np.digitize(y_true, bins) - 1

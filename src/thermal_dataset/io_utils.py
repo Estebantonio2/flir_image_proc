@@ -4,10 +4,11 @@ import shutil
 import numpy as np
 
 
-def create_output_dirs(output_root: Path) -> None:
+def create_output_dirs(output_root: Path, save_delta_t_npy: bool = True) -> None:
     (output_root / "raw_jpg").mkdir(parents=True, exist_ok=True)
     (output_root / "thermal_npy").mkdir(parents=True, exist_ok=True)
-    (output_root / "deltaT_npy").mkdir(parents=True, exist_ok=True)
+    if save_delta_t_npy:
+        (output_root / "deltaT_npy").mkdir(parents=True, exist_ok=True)
 
 
 def list_test_dirs(raw_root: Path) -> list[Path]:

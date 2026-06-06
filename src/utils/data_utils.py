@@ -20,6 +20,22 @@ class SubjectSplitPlan:
     trainval_indices: list[int]
     folds: list[SubjectCvFold]
 
+    @property
+    def num_test_subjects(self) -> int:
+        return len(self.test_subjects)
+
+    @property
+    def num_trainval_subjects(self) -> int:
+        return len(self.trainval_subjects)
+
+    @property
+    def num_test_samples(self) -> int:
+        return len(self.test_indices)
+
+    @property
+    def num_trainval_samples(self) -> int:
+        return len(self.trainval_indices)
+
 def split_by_sequence(df: pd.DataFrame, fraction: float = 0.8, seed: int = 42) -> tuple[list[int], list[int]]:
     """
     Garantiza una separación estricta de secuencias físicas de rastro térmico
@@ -146,14 +162,16 @@ def make_subject_cv_folds(
 
 
 def subject_summary(df: pd.DataFrame) -> pd.DataFrame:
-    """Resume género, completitud y materiales disponibles por sujeto."""
+    """Resume género, completitud, materiales y cantidad de muestras por sujeto."""
     _require_columns(df, ["name"])
 
     normalized = df.copy()
     normalized["name"] = normalized["name"].astype(str).str.strip().str.lower()
+    normalized["n_samples"] = 1
 
     aggregations = {
         "sequence_id": "nunique",
+        "n_samples": "sum",
         "surface": lambda values: ", ".join(sorted(map(str, pd.Series(values).dropna().unique()))),
     }
 
