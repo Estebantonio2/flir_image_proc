@@ -1,0 +1,10 @@
+Métrica	Valor (Baseline)
+0	MAE CV (Validación)	52.09 ± 13.64 s
+1	RMSE CV (Validación)	74.44 ± 20.66 s
+2	R² CV (Validación)	0.7658 ± 0.1365
+3	MAE Test (Generalización)	72.54 s
+4	RMSE Test (Generalización)	109.09 s
+5	R² Test (Generalización)	0.5345
+6	MAPE Test (Error %)	29.67 %
+7	Acc@60s Test	61.92 %
+8	Acc@120s Test	77.72 %
