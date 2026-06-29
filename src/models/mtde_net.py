@@ -52,8 +52,10 @@ class ResidualAttentionBlock(nn.Module):
 class MTDE_Net(nn.Module):
     """
     Multimodal Thermal Decay Estimation Network (MTDE-Net).
+    Integra características espaciales de la imagen térmica con un vector
+    tabular enriquecido de 10 variables (ambientales, físicas y estadísticas de contraste, excluyendo género por contexto forense).
     """
-    def __init__(self, tabular_dim=4, dropout=0.2):
+    def __init__(self, tabular_dim=10, dropout=0.2):
         super().__init__()
         # 1. Rama Visual Lite
         self.stem = nn.Sequential(

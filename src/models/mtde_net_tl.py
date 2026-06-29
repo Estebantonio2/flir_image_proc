@@ -1,3 +1,4 @@
+from typing import cast
 import torch
 import torch.nn as nn
 import torchvision.models as models
@@ -8,7 +9,7 @@ class MTDE_Net_TL(nn.Module):
     Acepta imágenes térmicas de 1 canal (escala de grises) y las expande automáticamente a 3 canales
     para aprovechar al 100% los pesos preentrenados de ImageNet.
     """
-    def __init__(self, backbone_name="resnet18", pretrained=True, freeze_backbone=False, tabular_dim=4, dropout=0.2):
+    def __init__(self, backbone_name="resnet18", pretrained=True, freeze_backbone=False, tabular_dim=10, dropout=0.2):
         super().__init__()
         self.backbone_name = backbone_name.lower()
         
@@ -16,20 +17,22 @@ class MTDE_Net_TL(nn.Module):
         if self.backbone_name == "resnet18":
             if hasattr(models, "ResNet18_Weights"):
                 weights = models.ResNet18_Weights.DEFAULT if pretrained else None
-                self.backbone = models.resnet18(weights=weights)
+                resnet = models.resnet18(weights=weights)
             else:
-                self.backbone = models.resnet18(pretrained=pretrained)
-            self.visual_dim = self.backbone.fc.in_features  # Generalmente 512
-            self.backbone.fc = nn.Identity()
+                resnet = models.resnet18(pretrained=pretrained)
+            self.visual_dim = resnet.fc.in_features  # Generalmente 512
+            resnet.fc = cast(nn.Linear, nn.Identity())
+            self.backbone = resnet
             
         elif self.backbone_name == "resnet50":
             if hasattr(models, "ResNet50_Weights"):
                 weights = models.ResNet50_Weights.DEFAULT if pretrained else None
-                self.backbone = models.resnet50(weights=weights)
+                resnet = models.resnet50(weights=weights)
             else:
-                self.backbone = models.resnet50(pretrained=pretrained)
-            self.visual_dim = self.backbone.fc.in_features  # Generalmente 2048
-            self.backbone.fc = nn.Identity()
+                resnet = models.resnet50(pretrained=pretrained)
+            self.visual_dim = resnet.fc.in_features  # Generalmente 2048
+            resnet.fc = cast(nn.Linear, nn.Identity())
+            self.backbone = resnet
             
         else:
             raise ValueError(f"Backbone no soportado: {backbone_name}. Elige 'resnet18' o 'resnet50'.")
