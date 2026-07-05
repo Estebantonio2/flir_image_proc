@@ -27,10 +27,11 @@ def _build_val_transform() -> transforms.Compose:
         transforms.ToTensor()
     ])
 
-class MultimodalSequenceDataset(Dataset):
+class MultimodalThermalSequenceDataset(Dataset):
     """
+    Dataset específico para el modelo Multimodal CNN-LSTM.
     Carga secuencias de imágenes térmicas (rama visual) y variables contextuales tabulares (rama tabular)
-    para el modelo Multimodal CNN-LSTM.
+    filtrando rigurosamente los tiempos negativos (antes de la disipación).
     """
     def __init__(
         self, 
@@ -50,7 +51,11 @@ class MultimodalSequenceDataset(Dataset):
         df = pd.read_csv(metadata_csv).dropna(
             subset=["thermal_path", "sequence_id", "t_seconds", "ambient_temp_C", "ambient_rh_pct", "surface"]
         )
+        
+        # Filtrar explícitamente valores negativos y menores a min_time_s
         df = df[df["t_seconds"].astype(float) > min_time_s].reset_index(drop=True)
+        
+        # Validar la existencia de archivos npy
         df = df[[self._resolve(p).exists() for p in df["thermal_path"]]].reset_index(drop=True)
         
         if sequence_ids is not None:
@@ -75,6 +80,7 @@ class MultimodalSequenceDataset(Dataset):
         self._build_windows()
         
     def _build_windows(self):
+        """Agrupa por secuencia y crea ventanas deslizantes dentro de cada secuencia."""
         grouped = self.df.groupby("sequence_id")
         for seq_id, group in grouped:
             sorted_group = group.sort_values("t_seconds")

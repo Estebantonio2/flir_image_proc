@@ -1,5 +1,6 @@
 from .losses import SqrtScaledMSELoss
-from .metrics import eval_dstfs_metrics, eval_mtde_net_metrics, eval_cnn_lstm_metrics, eval_cnn_1d_metrics
+from .metrics import eval_dstfs_metrics, eval_mtde_net_metrics, eval_cnn_lstm_metrics, eval_cnn_1d_metrics, eval_multimodal_cnn_lstm_metrics
+from .nested_cv import get_inner_split, NCVTracker
 from .data_utils import (
     SubjectCvFold,
     SubjectSplitPlan,
@@ -17,6 +18,9 @@ __all__ = [
     "eval_mtde_net_metrics",
     "eval_cnn_lstm_metrics",
     "eval_cnn_1d_metrics",
+    "eval_multimodal_cnn_lstm_metrics",
+    "get_inner_split",
+    "NCVTracker",
     "SubjectCvFold",
     "SubjectSplitPlan",
     "build_subject_split_plan",

@@ -16,7 +16,7 @@ echo.
 :: Definir comando apuntando a papermill del entorno virtual
 set JUPYTER_CMD=.venv\Scripts\python -m papermill
 
-echo [1/6] Ejecutando 01_DSTFS_training.ipynb con Papermill...
+echo [1/5] Ejecutando 01_DSTFS_training.ipynb con Papermill...
 %JUPYTER_CMD% notebooks/01_DSTFS_training.ipynb notebooks/01_DSTFS_training.ipynb --cwd notebooks --log-output
 if %errorlevel% neq 0 (
     echo.
@@ -26,7 +26,7 @@ if %errorlevel% neq 0 (
 )
 echo.
 
-echo [2/6] Ejecutando 02_MTDE_Net_training.ipynb con Papermill...
+echo [2/5] Ejecutando 02_MTDE_Net_training.ipynb con Papermill...
 %JUPYTER_CMD% notebooks/02_MTDE_Net_training.ipynb notebooks/02_MTDE_Net_training.ipynb --cwd notebooks --log-output
 if %errorlevel% neq 0 (
     echo.
@@ -36,7 +36,7 @@ if %errorlevel% neq 0 (
 )
 echo.
 
-echo [3/6] Ejecutando 03_CNN_LSTM_training.ipynb con Papermill...
+echo [3/5] Ejecutando 03_CNN_LSTM_training.ipynb con Papermill...
 %JUPYTER_CMD% notebooks/03_CNN_LSTM_training.ipynb notebooks/03_CNN_LSTM_training.ipynb --cwd notebooks --log-output
 if %errorlevel% neq 0 (
     echo.
@@ -46,7 +46,7 @@ if %errorlevel% neq 0 (
 )
 echo.
 
-echo [4/6] Ejecutando 04_1D_CNN_training.ipynb con Papermill...
+echo [4/5] Ejecutando 04_1D_CNN_training.ipynb con Papermill...
 %JUPYTER_CMD% notebooks/04_1D_CNN_training.ipynb notebooks/04_1D_CNN_training.ipynb --cwd notebooks --log-output
 if %errorlevel% neq 0 (
     echo.
@@ -56,23 +56,13 @@ if %errorlevel% neq 0 (
 )
 echo.
 
-echo [5/6] Ejecutando 05_MTDE_Net_transfer_learning.ipynb con Papermill...
+echo [5/5] Ejecutando 05_MTDE_Net_transfer_learning.ipynb con Papermill...
 %JUPYTER_CMD% notebooks/05_MTDE_Net_transfer_learning.ipynb notebooks/05_MTDE_Net_transfer_learning.ipynb --cwd notebooks --log-output
 if %errorlevel% neq 0 (
     echo.
-    echo ERROR en 05_MTDE_Net_transfer_learning.ipynb. Continuando con el siguiente...
+    echo ERROR en 05_MTDE_Net_transfer_learning.ipynb.
 ) else (
     echo Finalizado 05_MTDE_Net_transfer_learning.ipynb con exito.
-)
-echo.
-
-echo [6/6] Ejecutando 06_multimodal_cnn_lstm_training.ipynb con Papermill...
-%JUPYTER_CMD% notebooks/06_multimodal_cnn_lstm_training.ipynb notebooks/06_multimodal_cnn_lstm_training.ipynb --cwd notebooks --log-output
-if %errorlevel% neq 0 (
-    echo.
-    echo ERROR en 06_multimodal_cnn_lstm_training.ipynb.
-) else (
-    echo Finalizado 06_multimodal_cnn_lstm_training.ipynb con exito.
 )
 echo.
 

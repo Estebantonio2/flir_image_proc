@@ -48,6 +48,24 @@ def eval_cnn_1d_metrics(model: nn.Module, loader: DataLoader, device: str) -> di
     """
     return eval_dstfs_metrics(model, loader, device)
 
+
+def eval_multimodal_cnn_lstm_metrics(model: nn.Module, loader: DataLoader, device: str) -> dict[str, float]:
+    """
+    Calcula las métricas unificadas para el modelo Multimodal CNN-LSTM en segundos reales.
+    """
+    model.eval()
+    all_preds = []
+    all_targets = []
+    
+    with torch.no_grad():
+        for x_seq, x_tab, y in loader:
+            x_seq, x_tab, y = x_seq.to(device), x_tab.to(device), y.to(device)
+            p = model(x_seq, x_tab)
+            all_preds.append(p.cpu())
+            all_targets.append(y.cpu())
+            
+    return _compute_metrics(torch.cat(all_preds, dim=0), torch.cat(all_targets, dim=0))
+
 def _compute_metrics(all_p: torch.Tensor, all_y: torch.Tensor) -> dict[str, float]:
     """
     Función interna para calcular MAE, RMSE, R2, MAPE, Acc60, Acc120.
