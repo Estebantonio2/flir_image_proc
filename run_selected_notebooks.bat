@@ -36,25 +36,25 @@ if %errorlevel% neq 0 (
 )
 echo.
 
-echo [3/4] Ejecutando 03_mtde_net.ipynb con Papermill...
-%JUPYTER_CMD% selected_notebooks/03_mtde_net.ipynb selected_notebooks/03_mtde_net.ipynb --cwd selected_notebooks --log-output
-if %errorlevel% neq 0 (
-    echo.
-    echo ERROR en 03_mtde_net.ipynb. Continuando con el siguiente...
-) else (
-    echo Finalizado 03_mtde_net.ipynb con exito.
-)
-echo.
+@REM echo [3/4] Ejecutando 03_mtde_net.ipynb con Papermill...
+@REM %JUPYTER_CMD% selected_notebooks/03_mtde_net.ipynb selected_notebooks/03_mtde_net.ipynb --cwd selected_notebooks --log-output
+@REM if %errorlevel% neq 0 (
+@REM     echo.
+@REM     echo ERROR en 03_mtde_net.ipynb. Continuando con el siguiente...
+@REM ) else (
+@REM     echo Finalizado 03_mtde_net.ipynb con exito.
+@REM )
+@REM echo.
 
-echo [4/4] Ejecutando 04_mtde_net_transfer_learning.ipynb con Papermill...
-%JUPYTER_CMD% selected_notebooks/04_mtde_net_transfer_learning.ipynb selected_notebooks/04_mtde_net_transfer_learning.ipynb --cwd selected_notebooks --log-output
-if %errorlevel% neq 0 (
-    echo.
-    echo ERROR en 04_mtde_net_transfer_learning.ipynb.
-) else (
-    echo Finalizado 04_mtde_net_transfer_learning.ipynb con exito.
-)
-echo.
+@REM echo [4/4] Ejecutando 04_mtde_net_transfer_learning.ipynb con Papermill...
+@REM %JUPYTER_CMD% selected_notebooks/04_mtde_net_transfer_learning.ipynb selected_notebooks/04_mtde_net_transfer_learning.ipynb --cwd selected_notebooks --log-output
+@REM if %errorlevel% neq 0 (
+@REM     echo.
+@REM     echo ERROR en 04_mtde_net_transfer_learning.ipynb.
+@REM ) else (
+@REM     echo Finalizado 04_mtde_net_transfer_learning.ipynb con exito.
+@REM )
+@REM echo.
 
 echo ============================================================
 echo EJECUCION DE TODOS LOS MODELOS SELECCIONADOS (NCV) FINALIZADA
