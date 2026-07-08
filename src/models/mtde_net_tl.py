@@ -9,7 +9,7 @@ class MTDE_Net_TL(nn.Module):
     Acepta imágenes térmicas de 1 canal (escala de grises) y las expande automáticamente a 3 canales
     para aprovechar al 100% los pesos preentrenados de ImageNet.
     """
-    def __init__(self, backbone_name="resnet18", pretrained=True, freeze_backbone=False, tabular_dim=10, dropout=0.2):
+    def __init__(self, backbone_name="resnet18", pretrained=True, freeze_backbone=False, tabular_dim=4, dropout=0.2):
         super().__init__()
         self.backbone_name = backbone_name.lower()
         

@@ -31,7 +31,7 @@ class MultimodalThermalDataset(Dataset):
     """
     Dataset Multimodal que carga:
     1. Imagen térmica normalizada a [-1, 1].
-    2. Vector tabular con 8 variables continuas normalizadas y 2 categóricas de superficie codificadas (one-hot).
+    2. Vector tabular con 2 variables continuas normalizadas (ambientales) y 2 categóricas de superficie codificadas (one-hot).
     3. Etiqueta de tiempo de partida escalada.
     """
     means: np.ndarray
@@ -65,8 +65,7 @@ class MultimodalThermalDataset(Dataset):
             self.df = df
             
         self.continuous_cols = [
-            "ambient_temp_C", "ambient_rh_pct", "img_tmax_C", "img_tstd_C",
-            "delta_tmean_C", "delta_tstd_C", "hot_area_px_p95", "hot_delta_tmean_C_p95"
+            "ambient_temp_C", "ambient_rh_pct"
         ]
         
         # Calcular medias y stds en entrenamiento o heredar en validación/test
@@ -105,7 +104,7 @@ class MultimodalThermalDataset(Dataset):
         is_wood = 1.0 if str(row["surface"]).lower() == "wood" else 0.0
         is_glass = 1.0 if str(row["surface"]).lower() == "glass" else 0.0
         
-        # Vector final tabular: 8 continuas normalizadas + 2 binarias de superficie = 10 dimensiones
+        # Vector final tabular: 2 continuas normalizadas + 2 binarias de superficie = 4 dimensiones
         x_tab = torch.cat([
             torch.tensor(cont_vals, dtype=torch.float32),
             torch.tensor([is_wood, is_glass], dtype=torch.float32)

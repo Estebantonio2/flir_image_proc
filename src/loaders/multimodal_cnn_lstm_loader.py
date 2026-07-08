@@ -63,8 +63,7 @@ class MultimodalThermalSequenceDataset(Dataset):
             
         self.df = df
         self.continuous_cols = [
-            "ambient_temp_C", "ambient_rh_pct", "img_tmax_C", "img_tstd_C",
-            "delta_tmean_C", "delta_tstd_C", "hot_area_px_p95", "hot_delta_tmean_C_p95"
+            "ambient_temp_C", "ambient_rh_pct"
         ]
         
         # Calcular estadísticas de normalización o heredarlas
