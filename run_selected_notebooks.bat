@@ -16,15 +16,15 @@ echo.
 :: Definir comando apuntando a papermill del entorno virtual
 set JUPYTER_CMD=.venv\Scripts\python -m papermill
 
-@REM echo [1/4] Ejecutando 01_cnn_lstm.ipynb con Papermill...
-@REM %JUPYTER_CMD% selected_notebooks/01_cnn_lstm.ipynb selected_notebooks/01_cnn_lstm.ipynb --cwd selected_notebooks --log-output
-@REM if %errorlevel% neq 0 (
-@REM     echo.
-@REM     echo ERROR en 01_cnn_lstm.ipynb. Continuando con el siguiente...
-@REM ) else (
-@REM     echo Finalizado 01_cnn_lstm.ipynb con exito.
-@REM )
-@REM echo.
+echo [1/4] Ejecutando 01_cnn_lstm.ipynb con Papermill...
+%JUPYTER_CMD% selected_notebooks/01_cnn_lstm.ipynb selected_notebooks/01_cnn_lstm.ipynb --cwd selected_notebooks --log-output
+if %errorlevel% neq 0 (
+    echo.
+    echo ERROR en 01_cnn_lstm.ipynb. Continuando con el siguiente...
+) else (
+    echo Finalizado 01_cnn_lstm.ipynb con exito.
+)
+echo.
 
 echo [2/4] Ejecutando 02_multimodal_cnn_lstm.ipynb con Papermill...
 %JUPYTER_CMD% selected_notebooks/02_multimodal_cnn_lstm.ipynb selected_notebooks/02_multimodal_cnn_lstm.ipynb --cwd selected_notebooks --log-output
