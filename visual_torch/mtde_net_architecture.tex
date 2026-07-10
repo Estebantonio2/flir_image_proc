@@ -1,0 +1,138 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage[spanish]{babel}
+\usepackage{tikz}
+\usepackage{geometry}
+\usepackage{graphicx} % Requerido para \resizebox
+\geometry{a4paper, margin=1in}
+
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, calc}
+
+\title{Código TikZ para la Arquitectura de MTDE-Net (Tesis)}
+\author{Proyecto FLIR Image Processing}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+Este documento contiene el código de diagramación vectorial en TikZ listo para compilar en Overleaf o cualquier distribución de \LaTeX.
+
+Para evitar que los diagramas excedan el ancho de la página, se ha envuelto cada entorno \texttt{tikzpicture} dentro de un comando \texttt{\textbackslash resizebox\{\textbackslash textwidth\}\{!\}\{...\}}. Esto escalará automáticamente el diagrama para ajustarse perfectamente a los márgenes de tu documento.
+
+---
+
+\section{Diagrama 1: Arquitectura General de MTDE-Net}
+
+Copia este bloque de código en tu tesis para graficar el modelo general:
+
+\begin{figure}[htbp]
+\centering
+% \resizebox fuerza al diagrama a ajustarse al ancho del texto de la hoja
+\resizebox{\textwidth}{!}{
+\begin{tikzpicture}[
+    auto,
+    >=Stealth,
+    node distance=1.2cm,
+    % Definición de estilos de cajas
+    block/.style={draw, fill=blue!8, rectangle, minimum height=2.8em, minimum width=6.2em, rounded corners, align=center, text width=6em},
+    input/.style={draw, fill=red!8, ellipse, align=center, text width=6em, minimum height=2.8em},
+    output/.style={draw, fill=green!8, rounded corners, align=center, text width=6em, minimum height=2.8em},
+    fusion/.style={draw, fill=yellow!15, circle, minimum size=1.3cm, align=center, inner sep=0pt}
+]
+    % --- Rama Visual (Arriba) ---
+    \node [input] (img) {Imagen\\ Térmica\\ \small(1x112x112)};
+    \node [block, right=of img] (stem) {Stem Conv\\ \small(32x56x56)};
+    \node [block, right=of stem] (stages) {RAB Stages (1-4)\\ \small(256x7x7)};
+    \node [block, right=of stages] (gap) {Global Avg\\ Pool (GAP)\\ \small(256)};
+
+    % --- Rama Tabular (Abajo) ---
+    \node [input, below=of img, yshift=-1.0cm] (tab) {Metadatos\\ Tabulares\\ \small(10 variables)};
+    \node [block, right=of tab] (mlp) {MLP Tabular\\ \small(64)};
+
+    % --- Fusión y Cabezal ---
+    \node [fusion, right=of gap, xshift=0.8cm] (concat) {Late\\ Fusion\\ \small(320)};
+    \node [block, right=of concat] (head) {Cabezal\\ Regresión\\ \small(256)};
+    \node [output, right=of head] (out) {Predicción\\ \small Tiempo (s)};
+
+    % --- Conexiones y Flechas ---
+    \draw [->, thick] (img) -- (stem);
+    \draw [->, thick] (stem) -- (stages);
+    \draw [->, thick] (stages) -- (gap);
+    \draw [->, thick] (tab) -- (mlp);
+    
+    % Conectar GAP a la Fusión
+    \draw [->, thick] (gap) -- (concat);
+    
+    % Conectar MLP a la Fusión con codo ortogonal (en forma de L)
+    \draw [->, thick] (mlp.east) -| ($(concat.west)-(0.5,0)$) |- (concat.south west);
+
+    \draw [->, thick] (concat) -- (head);
+    \draw [->, thick] (head) -- (out);
+\end{tikzpicture}
+}
+\caption{Diagrama de bloques de la arquitectura multimodal MTDE-Net con fusión tardía.}
+\label{fig:mtde_net_architecture}
+\end{figure}
+
+---
+
+\newpage
+\section{Diagrama 2: Estructura Interna del Residual Attention Block (RAB)}
+
+Copia este bloque de código para explicar la atención dual dentro de cada bloque residual:
+
+\begin{figure}[htbp]
+\centering
+% \resizebox para ajustar el bloque al ancho de la hoja
+\resizebox{\textwidth}{!}{
+\begin{tikzpicture}[
+    auto,
+    >=Stealth,
+    node distance=1.5cm,
+    % Estilos para bloques internos del RAB
+    block/.style={draw, fill=blue!8, rectangle, minimum height=2.8em, minimum width=6.5em, rounded corners, align=center, text width=6.2em},
+    sum/.style={draw, fill=yellow!15, circle, minimum size=0.6cm, align=center, inner sep=0pt}
+]
+    % --- Camino Principal ---
+    \node (in) {Entrada $C_{in}$};
+    \node [block, right=of in] (conv1) {Conv 3x3\\ + BN + Act};
+    \node [block, right=of conv1] (conv2) {Conv 3x3\\ + BN};
+    
+    % --- Ramas de Atención (SA + CA) ---
+    \node [block, above right=of conv2, yshift=-0.4cm, xshift=0.3cm] (sa) {Atención\\ Espacial (SA)};
+    \node [block, below right=of conv2, yshift=0.4cm, xshift=0.3cm] (ca) {Atención\\ Canal (CA)};
+    
+    \node [sum, right=of conv2, xshift=3.5cm] (sum_att) {+};
+    \node [sum, right=of sum_att] (sum_skip) {+};
+    
+    \node [block, right=of sum_skip] (act) {PReLU\\ Final};
+    \node [right=of act] (out) {Salida $C_{out}$};
+
+    % --- Conexiones de Flujo ---
+    \draw [->, thick] (in) -- (conv1);
+    \draw [->, thick] (conv1) -- (conv2);
+    
+    % Bifurcación hacia la atención dual (SA y CA)
+    \draw [->, thick] (conv2.east) -- +(0.4,0) |- (sa.west);
+    \draw [->, thick] (conv2.east) -- +(0.4,0) |- (ca.west);
+    
+    % Sumar los mapas de atención
+    \draw [->, thick] (sa.east) -| (sum_att.north);
+    \draw [->, thick] (ca.east) -| (sum_att.south);
+    
+    \draw [->, thick] (sum_att) -- (sum_skip);
+    
+    % --- Conexión de Salto (Skip Connection) ---
+    % Dibuja la flecha por abajo para evitar cruzar otras líneas
+    \draw [->, thick] (in.east) -- +(0.3,0) -- +(0.3,-2.2) -| (sum_skip.south);
+    
+    \draw [->, thick] (sum_skip) -- (act);
+    \draw [->, thick] (act) -- (out);
+\end{tikzpicture}
+}
+\caption{Estructura interna del Residual Attention Block (RAB) con ramas duales de atención.}
+\label{fig:rab_block}
+\end{figure}
+
+\end{document}
