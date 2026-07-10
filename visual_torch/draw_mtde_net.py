@@ -1,6 +1,5 @@
 import os
 import sys
-import torch
 import torch.nn as nn
 import visualtorch
 
@@ -14,10 +13,10 @@ from src.models.dstfs import SoftThresholdPReLU
 
 def generate_diagrams():
     print("Inicializando modelo MTDE-Net...")
-    model = MTDE_Net(tabular_dim=10)
+    model = MTDE_Net(tabular_dim=4)
     model.eval()
 
-    input_shapes = ((1, 1, 112, 112), (1, 10))
+    input_shapes = ((1, 1, 112, 112), (1, 4))
 
     output_dir = os.path.dirname(os.path.abspath(__file__))
     os.makedirs(output_dir, exist_ok=True)

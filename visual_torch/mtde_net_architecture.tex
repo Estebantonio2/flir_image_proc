@@ -47,7 +47,7 @@ Copia este bloque de código en tu tesis para graficar el modelo general:
     \node [block, right=of stages] (gap) {Global Avg\\ Pool (GAP)\\ \small(256)};
 
     % --- Rama Tabular (Abajo) ---
-    \node [input, below=of img, yshift=-1.0cm] (tab) {Metadatos\\ Tabulares\\ \small(10 variables)};
+    \node [input, below=of img, yshift=-1.0cm] (tab) {Metadatos\\ Tabulares\\ \small(4 variables)};
     \node [block, right=of tab] (mlp) {MLP Tabular\\ \small(64)};
 
     % --- Fusión y Cabezal ---
@@ -125,7 +125,7 @@ Copia este bloque de código para explicar la atención dual dentro de cada bloq
     
     % --- Conexión de Salto (Skip Connection) ---
     % Dibuja la flecha por abajo para evitar cruzar otras líneas
-    \draw [->, thick] (in.east) -- +(0.3,0) -- +(0.3,-2.2) -| (sum_skip.south);
+    \draw [->, thick] (in.east) -- +(0.3,0) -- +(0.3,-2.2) -| node[pos=0.4, below, font=\scriptsize, align=center] {Conv 1x1 + BN\\ (si $C_{in} \neq C_{out}$)} (sum_skip.south);
     
     \draw [->, thick] (sum_skip) -- (act);
     \draw [->, thick] (act) -- (out);
