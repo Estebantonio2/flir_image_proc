@@ -2,7 +2,7 @@
 
 Este documento presenta una evaluación y comparación detallada de los modelos de aprendizaje profundo desarrollados para la estimación de tiempo en secuencias de imágenes térmicas del proyecto **FLIR Image Processing**, utilizando únicamente los resultados actuales en los notebooks de la carpeta `notebooks/`.
 
-**Fecha de la Comparativa:** 8 de julio de 2026
+**Fecha de la Comparativa:** 9 de julio de 2026
 
 ---
 
